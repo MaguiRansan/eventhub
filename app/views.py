@@ -64,32 +64,35 @@ def home(request):
 
 @login_required
 def events(request):
-    events = Event.objects.all().order_by("scheduled_at")
 
     fecha = request.GET.get("fecha")
     categoria_id = request.GET.get("categoria")
     venue_id = request.GET.get("venue")
+    mostrar_pasados = request.GET.get("mostrar_pasados", "false") == "true"
+
+    events = Event.objects.all()
 
     if fecha:
         events = events.filter(scheduled_at__date=fecha)
+    elif mostrar_pasados:
+        events = events.filter(scheduled_at__lt=timezone.now())
+    else:
+        events = events.filter(scheduled_at__gte=timezone.now())
+
     if categoria_id:
         events = events.filter(categories__id=categoria_id)
     if venue_id:
         events = events.filter(venue_id=venue_id)
 
-    events = events.distinct()
-
-    categorias = Category.objects.all()
-    venues = Venue.objects.all()
-
+   
     return render(
         request,
         "app/events.html",
         {
             "events": events,
             "user_is_organizer": request.user.is_organizer,
-            "categorias": categorias,
-            "venues": venues,
+            "categorias": Category.objects.all(),
+            "venues": Venue.objects.all(),
         },
     )
 
