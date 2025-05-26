@@ -13,6 +13,12 @@
                 <div class="card-body p-4">
                     <h6 class="text-secondary mb-0">Comprar Entrada</h6>
                     <h3 class="mb-2">{{ event.title }}</h3>
+                    {% if total_ya_compradas > 0 %}
+                        <div class="alert alert-info py-2 px-3 small">
+                            Ya compraste {{ total_ya_compradas }} de las 4 entradas permitidas para este evento.
+                        </div>
+                    {% endif %}
+
                     <div class="mb-2 d-flex align-items-center text-muted">
                         <i class="bi bi-calendar me-2"></i>
                         <span>{{ event.formatted_date }}</span>
@@ -46,7 +52,7 @@
                                 <button type="button" class="btn btn-outline-secondary" id="increase-btn">+</button>
                             </div>
                             <small class="text-muted" id="available-tickets">
-                                Disponibles: 
+                                Disponibles:
                                 <span id="general-available" {% if ticket_form.type.value != 'GENERAL' %}style="display:none;"{% endif %}>
                                     {{ event.general_tickets_available }} entradas generales
                                 </span>
@@ -82,10 +88,10 @@
                                 {% if payment_form.card_number.field.widget.input_type %}
                                     {{ payment_form.card_number }}
                                 {% else %}
-                                    <input type="text" name="{{ payment_form.card_number.html_name }}" 
-                                           id="{{ payment_form.card_number.id_for_label }}" 
-                                           class="form-control" 
-                                           placeholder="1234 5678 9012 3456" 
+                                    <input type="text" name="{{ payment_form.card_number.html_name }}"
+                                           id="{{ payment_form.card_number.id_for_label }}"
+                                           class="form-control"
+                                           placeholder="1234 5678 9012 3456"
                                            value="{{ payment_form.card_number.value|default:'' }}">
                                 {% endif %}
                                 {% if payment_form.card_number.errors %}
@@ -96,11 +102,11 @@
                             <div class="row">
                                 <div class="col-6 mb-3">
                                     <label class="form-label">Fecha de expiración</label>
-                                    <input type="text" 
-                                           name="{{ payment_form.expiry_date.html_name|default:'expiry_date' }}" 
-                                           id="{{ payment_form.expiry_date.id_for_label|default:'id_expiry_date' }}" 
-                                           class="form-control w-100" 
-                                           placeholder="MM/AA" 
+                                    <input type="text"
+                                           name="{{ payment_form.expiry_date.html_name|default:'expiry_date' }}"
+                                           id="{{ payment_form.expiry_date.id_for_label|default:'id_expiry_date' }}"
+                                           class="form-control w-100"
+                                           placeholder="MM/AA"
                                            value="{{ payment_form.expiry_date.value|default:'' }}">
                                     {% if payment_form.expiry_date.errors %}
                                         <div class="text-danger small">{{ payment_form.expiry_date.errors.0 }}</div>
@@ -109,11 +115,11 @@
 
                                 <div class="col-6 mb-3">
                                     <label class="form-label">CVV</label>
-                                    <input type="text" 
-                                           name="{{ payment_form.cvv.html_name|default:'cvv' }}" 
-                                           id="{{ payment_form.cvv.id_for_label|default:'id_cvv' }}" 
-                                           class="form-control w-100" 
-                                           placeholder="123" 
+                                    <input type="text"
+                                           name="{{ payment_form.cvv.html_name|default:'cvv' }}"
+                                           id="{{ payment_form.cvv.id_for_label|default:'id_cvv' }}"
+                                           class="form-control w-100"
+                                           placeholder="123"
                                            value="{{ payment_form.cvv.value|default:'' }}">
                                     {% if payment_form.cvv.errors %}
                                         <div class="text-danger small">{{ payment_form.cvv.errors.0 }}</div>
@@ -126,10 +132,10 @@
                                 {% if payment_form.card_holder.field.widget.input_type %}
                                     {{ payment_form.card_holder }}
                                 {% else %}
-                                    <input type="text" name="{{ payment_form.card_holder.html_name }}" 
-                                           id="{{ payment_form.card_holder.id_for_label }}" 
-                                           class="form-control" 
-                                           placeholder="Juan Pérez" 
+                                    <input type="text" name="{{ payment_form.card_holder.html_name }}"
+                                           id="{{ payment_form.card_holder.id_for_label }}"
+                                           class="form-control"
+                                           placeholder="Juan Pérez"
                                            value="{{ payment_form.card_holder.value|default:'' }}">
                                 {% endif %}
                                 {% if payment_form.card_holder.errors %}

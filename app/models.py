@@ -13,6 +13,8 @@ import qrcode
 import base64
 from io import BytesIO
 from .fields import EncryptedCharField
+from django.contrib import messages
+from django.shortcuts import redirect
 
 
 class User(AbstractUser):
@@ -106,9 +108,9 @@ class Event(models.Model):
     def validate(cls, title, description, scheduled_at, general_tickets=None, vip_tickets=None):
         errors = {}
         if not title:
-            errors["title"] = "Por favor ingrese un título"
+            errors["title"] = "Por favor ingrese un titulo"
         if not description:
-            errors["description"] = "Por favor ingrese una descripción"
+            errors["description"] = "Por favor ingrese una descripcion"
         if not scheduled_at or scheduled_at < timezone.now():
             errors["scheduled_at"] = "La fecha del evento debe ser en el futuro"
         if general_tickets is not None and general_tickets < 0:
@@ -180,12 +182,9 @@ class Rating(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('event', 'user')  # Garantiza que un usuario no pueda calificar el mismo evento dos veces
-
+        unique_together = ('event', 'user')
     def __str__(self):
         return f"{self.user.username} - {self.score} estrellas"
-
-
 
 class Ticket(models.Model):
     class TicketType(models.TextChoices):
@@ -205,7 +204,7 @@ class Ticket(models.Model):
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name="tickets")
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name="tickets")
 
-    def __str__ (self):
+    def __str__(self):
         type_map = {'GENERAL': 'General', 'VIP': 'VIP'}
         return f"{type_map.get(self.type, self.type)} Ticket - {self.event.title} (x{self.quantity})"
 
@@ -274,10 +273,19 @@ class Ticket(models.Model):
 
     @classmethod
     def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
+        total_existentes = cls.objects.filter(user=user, event=event).aggregate(
+            total=models.Sum('quantity'))['total'] or 0
+        if total_existentes + quantity > 4:
+            raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+
         ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
+        if not ticket.ticket_code:
+            ticket.ticket_code = ticket._generate_ticket_code()
         ticket.full_clean()
         ticket.save()
         return ticket
+
+
 
 
 class PaymentInfo(models.Model):
