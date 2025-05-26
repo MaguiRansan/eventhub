@@ -95,55 +95,63 @@ def events(request):
 
 @login_required
 def event_detail(request, id):
-    event = get_object_or_404(Event, pk=id)
-    ratings = Rating.objects.filter(event=event)
+    event = get_object_or_404(Event.objects.prefetch_related('ratings'), pk=id)
+    
     user_is_organizer = event.organizer == request.user
     now = timezone.now()
     rating_to_edit = None
     rating_id = request.GET.get('rating_id') or request.POST.get('rating_id')
     event_has_started = event.scheduled_at <= now
 
-    has_ticket = Ticket.objects.filter(event=event, user=request.user).exists()  # 🔹 Agregado
+    has_ticket = Ticket.objects.filter(event=event, user=request.user, payment_confirmed=True).exists()
 
     if rating_id:
         rating_to_edit = get_object_or_404(Rating, pk=rating_id, event=event)
         if user_is_organizer or rating_to_edit.user != request.user:
-            return redirect('event_detail', id=id)
+            messages.error(request, "No tienes permiso para editar esta calificación.")
+            return redirect('event_detail', id=id) 
 
     if request.method == 'POST':
         if rating_to_edit:
-            form = RatingForm(request.POST, instance=rating_to_edit, user=request.user, event=event)
+            form = RatingForm(request.POST, instance=rating_to_edit)
         else:
             if user_is_organizer:
-                return redirect('event_detail', id=id)
-            form = RatingForm(request.POST, user=request.user, event=event)
+                messages.error(request, "Los organizadores no pueden dejar calificaciones.")
+                return redirect('event_detail', id=id) 
+            form = RatingForm(request.POST)
 
         if form.is_valid():
             if not event_has_started:
-                form.add_error(None, "Solo podés calificar eventos que ya ocurrieron.")  # 🔹 Validación
+                form.add_error(None, "Solo puedes calificar eventos que ya ocurrieron.")
             elif not has_ticket:
-                form.add_error(None, "Solo podés calificar si tenés una entrada para este evento.")  # 🔹 Validación
+                form.add_error(None, "Solo puedes calificar si tienes una entrada comprada para este evento.")
             else:
                 try:
                     new_rating = form.save(commit=False)
                     new_rating.event = event
                     new_rating.user = request.user
                     new_rating.save()
+                    messages.success(request, "¡Tu calificación ha sido guardada con éxito!")
                     return redirect('event_detail', id=id)
                 except IntegrityError:
-                    form.add_error(None, "Ya has calificado este evento.")
+                    messages.warning(request, "Ya has calificado este evento. Puedes editar tu calificación existente.")
+                except Exception as e:
+                    messages.error(request, f"Error al guardar la calificación: {e}")
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"Error en el campo '{field if field != '__all__' else 'general'}': {error}")
     else:
-        form = RatingForm(instance=rating_to_edit, user=request.user, event=event)
+        form = RatingForm(instance=rating_to_edit)
 
     context = {
         'event': event,
-        'ratings': ratings,
         'form': form,
         'rating_to_edit': rating_to_edit,
         'can_edit': user_is_organizer,
         'now': now,
         'event_has_started': event_has_started,
-        'has_ticket': has_ticket,  # 🔹 Para usarlo en el template si querés
+        'has_ticket': has_ticket,
     }
     return render(request, 'app/event_detail.html', context)
 
@@ -155,8 +163,8 @@ def rating_delete(request, id, rating_id):
     if request.user == rating.user or request.user.is_organizer:
         if request.method == "POST":
             rating.delete()
-            return redirect("event_detail", id=id)
-    return redirect("event_detail", id=id)
+            return redirect("event_detail", id=id) 
+    return redirect("event_detail", id=id) 
 
 @login_required
 def create_event(request):
@@ -181,7 +189,7 @@ def create_event(request):
 
             event.save()
             form.save_m2m()
-            return redirect('event_detail', event_id=event.id)
+            return redirect('event_detail', id=event.id) 
     else:
         form = EventForm()
 
@@ -191,7 +199,7 @@ def create_event(request):
     })
 
 @login_required
-def edit_event(request, event_id):
+def edit_event(request, event_id): 
     event = get_object_or_404(Event, id=event_id)
 
     if not request.user.is_organizer:
@@ -217,7 +225,7 @@ def edit_event(request, event_id):
 
             updated_event.save()
             form.save_m2m()
-            return redirect('event_detail', event_id=event.pk)
+            return redirect('event_detail', id=event.pk) 
     else:
         initial_data = {
             'title': event.title,
@@ -258,10 +266,10 @@ def event_delete(request, id):
         event.delete()
         return redirect("events")
 
-    return redirect("event_detail", id=id)
+    return redirect("event_detail", id=id) 
 
 @login_required
-def organizer_tickets(request, event_id=None):
+def organizer_tickets(request, event_id=None): 
     if not request.user.is_organizer:
         return redirect('events')
 
@@ -286,10 +294,10 @@ def organizer_tickets(request, event_id=None):
 
 @login_required
 @transaction.atomic
-def ticket_purchase(request, event_id):
+def ticket_purchase(request, event_id): 
     event = get_object_or_404(Event, pk=event_id)
     if request.user.is_organizer:
-        return redirect('event_detail', id=event_id)
+        return redirect('event_detail', id=event_id) 
 
     if request.method == 'POST':
         ticket_form = TicketForm(request.POST, event=event)
@@ -730,7 +738,7 @@ def event_form(request, id=None):
     })
 
 @login_required
-def rating_create(request, id):
+def rating_create(request, id): 
     if request.user.is_organizer:
         messages.error(request, "Los organizadores no pueden dejar calificaciones.")
         return redirect("event_detail", id=id)

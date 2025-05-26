@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
 
 {% block content %}
 <div class="container">
@@ -40,7 +42,7 @@
                         </div>
                         <div>
                             <h6 class="mb-0">Fecha y Hora</h6>
-                            <p class="mb-0">{{ event.scheduled_at|date:"l, j \\d\\e F \\d\\e Y, H:i" }}</p>
+                            <p class="mb-0">{{ event.scheduled_at|date:"l, j \d\e F \d\e Y, H:i" }}</p>
                             <small class="text-muted">Estado:
                                 {% if event.scheduled_at > now %}
                                     Evento próximo
@@ -110,7 +112,7 @@
 
                 {% if request.user == event.organizer %}
                     <div class="alert alert-info mb-3">Sos el organizador de este evento.</div>
-                    <a href="{% url 'organizer_tickets_event' event.id %}" class="btn btn-primary mb-3">
+                    <a href="{% url 'organizer_tickets_event' event_id=event.id %}" class="btn btn-primary mb-3">
                         Ver entradas vendidas
                     </a>
                 {% elif request.user.is_organizer %}
@@ -146,102 +148,192 @@
     <div class="row mb-5">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title">Calificaciones y Reseñas ({{ ratings.count }})</h5>
+                <h5 class="card-title">Calificaciones y Reseñas
+                    {% if request.user.is_organizer %}
+                        {% if event.average_rating is not None %}
+                            <span class="d-inline-block align-middle ms-2">
+                                {% with avg_score=event.average_rating|default:0.0 %}
+                                    {% with num_full_stars=avg_score|floor %}
+                                        {% for _ in 1|ljust:num_full_stars %}
+                                            <i class="bi bi-star-fill text-warning"></i>
+                                        {% endfor %}
+                                    {% endwith %}
 
-                {% for rating in ratings %}
-                <div class="mb-4 border-bottom pb-3">
-                    <h6>{{ rating.user.username }}</h6>
-                    <small class="text-muted">{{ rating.created_at|date:"j M Y, H:i" }}</small>
+                                    {% if avg_score|modulo:1 > 0.001 %}
+                                        <i class="bi bi-star-half text-warning"></i>
+                                    {% endif %}
 
-                    <div class="mb-2">
-                        {% for star in "12345" %}
-                            {% if star <= rating.score|stringformat:"s" %}
-                                <i class="bi bi-star-fill text-warning"></i>
-                            {% else %}
-                                <i class="bi bi-star text-muted"></i>
-                            {% endif %}
+                                    {% with stars_shown_total_pre=avg_score|floor %}
+                                        {% if avg_score|modulo:1 > 0.001 %}
+                                            {% with stars_shown_total=stars_shown_total_pre|add:1 %}
+                                                {% with empty_stars_count=5|sub:stars_shown_total %}
+                                                    {% for _ in 1|ljust:empty_stars_count %}
+                                                        <i class="bi bi-star text-muted"></i>
+                                                    {% endfor %}
+                                                {% endwith %}
+                                            {% endwith %}
+                                        {% else %}
+                                            {% with empty_stars_count=5|sub:stars_shown_total_pre %}
+                                                {% for _ in 1|ljust:empty_stars_count %}
+                                                    <i class="bi bi-star text-muted"></i>
+                                                {% endfor %}
+                                            {% endwith %}
+                                        {% endif %}
+                                    {% endwith %}
+                                {% endwith %}
+                            </span>
+                            <span class="badge bg-success ms-2 fs-6">
+                                {{ event.average_rating|floatformat:1 }}
+                            </span>
+                            <small class="text-muted">({{ event.total_ratings_count }} calificaciones)</small>
+                        {% else %}
+                            <span class="badge bg-secondary ms-2 fs-6">Sin calificaciones</span>
+                        {% endif %}
+                    {% else %}
+                        <small class="text-muted">({{ event.total_ratings_count }} calificaciones)</small>
+                    {% endif %}
+                </h5>
+
+                {% if event.ratings.all %}
+                    <div class="list-group list-group-flush">
+                        {% for rating in event.ratings.all %}
+                        <div class="list-group-item bg-light mb-3 rounded shadow-sm">
+                            <div class="d-flex w-100 justify-content-between align-items-center">
+                                <h6 class="mb-1">
+                                    <strong>{{ rating.user.username }}</strong>
+                                    <small class="text-muted ms-2">{{ rating.created_at|date:"j M Y, H:i" }}</small>
+                                </h6>
+                                <div class="rating-stars">
+                                    {% for star in "12345" %}
+                                        {% if star <= rating.score|stringformat:"s" %}
+                                            <i class="bi bi-star-fill text-warning"></i>
+                                        {% else %}
+                                            <i class="bi bi-star text-muted"></i>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <h6 class="mb-1 mt-2 text-primary">{{ rating.title }}</h6>
+                            <p class="mb-2">{{ rating.comment }}</p>
+
+                            <div class="d-flex justify-content-end">
+                                {% if rating.user == request.user %}
+                                <form method="get" action="{% url 'event_detail' id=event.id %}" class="me-2">
+                                    <input type="hidden" name="rating_id" value="{{ rating.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">Editar</button>
+                                </form>
+                                {% endif %}
+
+                                {% if rating.user == request.user or can_edit or request.user.is_staff %}
+                                <form action="{% url 'rating_delete' id=event.id rating_id=rating.id %}" method="post">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                                            onclick="return confirm('¿Estás seguro de eliminar esta reseña?');">
+                                        Eliminar
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
                         {% endfor %}
                     </div>
-
-                    <h6>{{ rating.title }}</h6>
-                    <p>{{ rating.comment }}</p>
-
-                    <div>
-                        {% if rating.user == request.user %}
-                        <form method="get" action="{% url 'event_detail' event.id %}" class="d-inline">
-                            <input type="hidden" name="rating_id" value="{{ rating.id }}">
-                            <button type="submit" class="btn btn-sm btn-outline-primary">Editar</button>
-                        </form>
-                        {% endif %}
-
-                        {% if rating.user == request.user or can_edit or request.user.is_staff %}
-                        <form action="{% url 'rating_delete' event.id rating.id %}" method="post" class="d-inline">
-                            {% csrf_token %}
-                            <button type="submit" class="btn btn-sm btn-outline-danger"
-                                    onclick="return confirm('¿Estás seguro de eliminar esta reseña?');">
-                                Eliminar
-                            </button>
-                        </form>
-                        {% endif %}
-                    </div>
-                </div>
-                {% empty %}
+                {% else %}
                 <p class="text-muted">Todavía no hay reseñas. ¡Sé el primero en dejar una!</p>
-                {% endfor %}
+                {% endif %}
             </div>
         </div>
     </div>
 
-    {% if not request.user.is_organizer and not request.user == event.organizer %}
-<div class="row mb-5">
-    <div class="card">
-        <div class="card-body">
-            <h5 class="card-title">{% if rating_to_edit %}Editar tu reseña{% else %}Dejar una reseña{% endif %}</h5>
-
-            <form method="post" action="{% url 'event_detail' event.id %}">
-                {% csrf_token %}
-
-                {% if form.non_field_errors %}
-                    <div class="alert alert-danger">
-                        {% for error in form.non_field_errors %}
-                            <p class="mb-0">{{ error }}</p>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-
-                {% if rating_to_edit %}
-                    <input type="hidden" name="rating_id" value="{{ rating_to_edit.id }}">
-                {% endif %}
-
-                <div class="mb-3">
-                    <label for="title" class="form-label">Título</label>
-                    <input type="text" id="title" name="title" class="form-control" required
-                        value="{{ form.initial.title|default_if_none:'' }}">
-                </div>
-
-                <div class="mb-3">
-                    <label for="score" class="form-label">Calificación</label>
-                    <select id="score" name="score" class="form-select" required>
-                        <option value="">Selecciona una calificación</option>
-                        {% for num in "54321" %}
-                            <option value="{{ num }}" {% if form.score.value|stringformat:"s" == num %}selected{% endif %}>
-                                {{ num }} {% if num == "5" %}(Excelente){% elif num == "4" %}(Muy Bueno){% elif num == "3" %}(Bueno){% elif num == "2" %}(Regular){% else %}(Malo){% endif %}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label for="comment" class="form-label">Comentario</label>
-                    <textarea id="comment" name="comment" class="form-control" required rows="3">{{ form.initial.comment|default_if_none:'' }}</textarea>
-                </div>
-
-                <button type="submit" class="btn btn-primary">
-                    {% if rating_to_edit %}Actualizar reseña{% else %}Enviar calificación{% endif %}
-                </button>
-            </form>
+    {% if request.user == event.organizer %}
+    <div class="row mb-5">
+        <div class="card">
+            <div class="card-body">
+                <p class="text-muted">Como organizador de este evento, no puedes dejar calificaciones.</p>
+            </div>
         </div>
     </div>
+    {% elif request.user.is_organizer %}
+    <div class="row mb-5">
+        <div class="card">
+            <div class="card-body">
+                <p class="text-muted">Los organizadores no pueden dejar calificaciones para eventos de otros.</p>
+            </div>
+        </div>
+    </div>
+    {% elif request.user.is_authenticated %}
+        {% if event_has_started and has_ticket %}
+        <div class="row mb-5">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">{% if rating_to_edit %}Editar tu reseña{% else %}Dejar una reseña{% endif %}</h5>
+
+                <form method="post" action="{% url 'event_detail' event.id %}">
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.non_field_errors %}
+                                <p class="mb-0">{{ error }}</p>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% if rating_to_edit %}
+                        <input type="hidden" name="rating_id" value="{{ rating_to_edit.id }}">
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Título</label>
+                        <input type="text" id="title" name="title" class="form-control" required
+                            value="{{ form.initial.title|default_if_none:'' }}">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="score" class="form-label">Calificación</label>
+                        <select id="score" name="score" class="form-select" required>
+                            <option value="">Selecciona una calificación</option>
+                            {% for num in "54321" %}
+                                <option value="{{ num }}" {% if form.score.value|stringformat:"s" == num %}selected{% endif %}>
+                                    {{ num }} {% if num == "5" %}(Excelente){% elif num == "4" %}(Muy Bueno){% elif num == "3" %}(Bueno){% elif num == "2" %}(Regular){% else %}(Malo){% endif %}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="comment" class="form-label">Comentario</label>
+                        <textarea id="comment" name="comment" class="form-control" required rows="3">{{ form.initial.comment|default_if_none:'' }}</textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        {% if rating_to_edit %}Actualizar reseña{% else %}Enviar calificación{% endif %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+        {% else %}
+        <div class="row mb-5">
+            <div class="card">
+                <div class="card-body">
+                    {% if not event_has_started %}
+                        <p class="text-muted">Solo puedes calificar este evento después de que haya ocurrido.</p>
+                    {% elif not has_ticket %}
+                        <p class="text-muted">Solo puedes calificar este evento si tienes una entrada comprada y el pago ha sido confirmado.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% else %}
+        <div class="row mb-5">
+            <div class="card">
+                <div class="card-body">
+                    <p class="text-muted">Inicia sesión para dejar una calificación.</p>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+
 </div>
-{% endif %}
 {% endblock %}

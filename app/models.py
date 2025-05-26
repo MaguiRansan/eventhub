@@ -13,6 +13,7 @@ import qrcode
 import base64
 from io import BytesIO
 from .fields import EncryptedCharField
+from django.db.models import Avg
 
 
 class User(AbstractUser):
@@ -170,17 +171,27 @@ class Event(models.Model):
             self.categories.set(categories)
 
         return self
+    @property
+    def average_rating(self):
+        return self.ratings.aggregate(Avg('score'))['score__avg']
+
+    @property
+    def total_ratings_count(self):
+        return self.ratings.count()
 
 class Rating(models.Model):
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name='ratings')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     title = models.CharField(max_length=100)
     comment = models.TextField(blank=True, null=True)
-    score = models.PositiveSmallIntegerField()
+    score = models.PositiveSmallIntegerField(
+        choices=[(i, str(i)) for i in range(1, 6)],
+        help_text="Puntuación del 1 al 5"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('event', 'user')  # Garantiza que un usuario no pueda calificar el mismo evento dos veces
+        unique_together = ('event', 'user') 
 
     def __str__(self):
         return f"{self.user.username} - {self.score} estrellas"
