@@ -83,6 +83,10 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
+    
+    @property
+    def is_past(self):
+        return self.scheduled_at < timezone.now()
 
     @property
     def formatted_date(self):
