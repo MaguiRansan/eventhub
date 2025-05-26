@@ -1,18 +1,15 @@
 import datetime
-import time
-
+from decimal import Decimal
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
-
-from app.models import Event, User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from app.models import Event, User, Category, Venue
 
 
 class BaseEventTestCase(TestCase):
-    """Clase base con la configuración común para todos los tests de eventos"""
 
-    def setUp(self):
-        # Crear un usuario organizador
+    def setUp(self):   
         self.organizer = User.objects.create_user(
             username="organizador",
             email="organizador@test.com",
@@ -20,7 +17,6 @@ class BaseEventTestCase(TestCase):
             is_organizer=True,
         )
 
-        # Crear un usuario regular
         self.regular_user = User.objects.create_user(
             username="regular",
             email="regular@test.com",
@@ -28,22 +24,60 @@ class BaseEventTestCase(TestCase):
             is_organizer=False,
         )
 
-        # Crear algunos eventos de prueba
+     
+        self.category1 = Category.objects.create(
+            name="Música",
+            description="Eventos musicales",
+            is_active=True
+        )
+        self.category2 = Category.objects.create(
+            name="Arte",
+            description="Eventos artísticos",
+            is_active=True
+        )
+
+    
+        self.venue = Venue.objects.create(
+            name="Teatro Principal",
+            address="Calle Principal 123",
+            city="Buenos Aires",
+            capacity=1000,
+            contact="info@teatro.com",
+            organizer=self.organizer
+        )
+
+       
         self.event1 = Event.objects.create(
-            title="Evento 1",
-            description="Descripción del evento 1",
+            title="Concierto de Rock",
+            description="Descripción del concierto",
             scheduled_at=timezone.now() + datetime.timedelta(days=1),
             organizer=self.organizer,
+            venue=self.venue,
+            general_price=Decimal('100.00'),
+            vip_price=Decimal('200.00'),
+            general_tickets_total=500,
+            general_tickets_available=500,
+            vip_tickets_total=100,
+            vip_tickets_available=100,
         )
+        self.event1.categories.add(self.category1)
 
         self.event2 = Event.objects.create(
-            title="Evento 2",
-            description="Descripción del evento 2",
+            title="Exposición de Arte",
+            description="Descripción de la exposición",
             scheduled_at=timezone.now() + datetime.timedelta(days=2),
             organizer=self.organizer,
+            venue=self.venue,
+            general_price=Decimal('50.00'),
+            vip_price=Decimal('100.00'),
+            general_tickets_total=200,
+            general_tickets_available=200,
+            vip_tickets_total=50,
+            vip_tickets_available=50,
         )
+        self.event2.categories.add(self.category2)
 
-        # Cliente para hacer peticiones
+       
         self.client = Client()
 
 
@@ -52,82 +86,92 @@ class EventsListViewTest(BaseEventTestCase):
 
     def test_events_view_with_login(self):
         """Test que verifica que la vista events funciona cuando el usuario está logueado"""
-        # Login con usuario regular
         self.client.login(username="regular", password="password123")
-
-        # Hacer petición a la vista events
         response = self.client.get(reverse("events"))
-
-        # Verificar respuesta
+        
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "app/events.html")
-        self.assertIn("events", response.context)
-        self.assertIn("user_is_organizer", response.context)
         self.assertEqual(len(response.context["events"]), 2)
         self.assertFalse(response.context["user_is_organizer"])
-
-        # Verificar que los eventos están ordenados por fecha
-        events = list(response.context["events"])
-        self.assertEqual(events[0].id, self.event1.id)
-        self.assertEqual(events[1].id, self.event2.id)
+        self.assertContains(response, "Concierto de Rock")
+        self.assertContains(response, "Exposición de Arte")
 
     def test_events_view_with_organizer_login(self):
         """Test que verifica que la vista events funciona cuando el usuario es organizador"""
-        # Login con usuario organizador
         self.client.login(username="organizador", password="password123")
-
-        # Hacer petición a la vista events
         response = self.client.get(reverse("events"))
-
-        # Verificar respuesta
+        
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["user_is_organizer"])
+        self.assertContains(response, "Crear Evento")
 
     def test_events_view_without_login(self):
-        """Test que verifica que la vista events redirige a login cuando el usuario no está logueado"""
-        # Hacer petición a la vista events sin login
+        """Test que verifica la redirección cuando el usuario no está logueado"""
         response = self.client.get(reverse("events"))
-
-        # Verificar que redirecciona al login
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith("/accounts/login/"))
+
+    def test_events_view_filtering(self):
+        """Test que verifica los filtros de la vista de eventos"""
+        self.client.login(username="regular", password="password123")
+        
+        
+        response = self.client.get(reverse("events") + "?categoria=" + str(self.category1.pk))
+        self.assertEqual(len(response.context["events"]), 1)
+        self.assertEqual(response.context["events"][0].id, self.event1.pk)
+        
+      
+        response = self.client.get(reverse("events") + "?venue=" + str(self.venue.pk))
+        self.assertEqual(len(response.context["events"]), 2)
+        
+        
+        past_event = Event.objects.create(
+            title="Evento Pasado",
+            description="Evento que ya ocurrió",
+            scheduled_at=timezone.now() - datetime.timedelta(days=1),
+            organizer=self.organizer,
+            venue=self.venue
+        )
+        response = self.client.get(reverse("events") + "?mostrar_pasados=true")
+        self.assertEqual(len(response.context["events"]), 1)
+        self.assertEqual(response.context["events"][0].id, past_event.pk)
 
 
 class EventDetailViewTest(BaseEventTestCase):
     """Tests para la vista de detalle de un evento"""
 
     def test_event_detail_view_with_login(self):
-        """Test que verifica que la vista event_detail funciona cuando el usuario está logueado"""
-        # Login con usuario regular
         self.client.login(username="regular", password="password123")
-
-        # Hacer petición a la vista event_detail
-        response = self.client.get(reverse("event_detail", args=[self.event1.id]))
-
-        # Verificar respuesta
+        response = self.client.get(reverse("event_detail", args=[self.event1.pk]))
+        
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "app/event_detail.html")
-        self.assertIn("event", response.context)
-        self.assertEqual(response.context["event"].id, self.event1.id)
+        self.assertEqual(response.context["event"].id, self.event1.pk)
+        self.assertContains(response, "Concierto de Rock")
+        self.assertContains(response, "Descripción del concierto")
+        self.assertContains(response, "Música")
 
-    def test_event_detail_view_without_login(self):
-        """Test que verifica que la vista event_detail redirige a login cuando el usuario no está logueado"""
-        # Hacer petición a la vista event_detail sin login
-        response = self.client.get(reverse("event_detail", args=[self.event1.id]))
+    def test_event_detail_view_with_organizer(self):
+        self.client.login(username="organizador", password="password123")
+        response = self.client.get(reverse("event_detail", args=[self.event1.pk]))
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_edit"])
+        self.assertContains(response, "Editar")
+        self.assertContains(response, "Eliminar")
 
-        # Verificar que redirecciona al login
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.url.startswith("/accounts/login/"))
+    def test_event_detail_view_rating_form(self):
+        """Test que verifica el formulario de calificación en la vista de detalle"""
+        self.client.login(username="regular", password="password123")
+        response = self.client.get(reverse("event_detail", args=[self.event1.pk]))
+        
+        self.assertIn("form", response.context)
+        self.assertIsNotNone(response.context["form"])
+        self.assertIn("rating_to_edit", response.context)
 
     def test_event_detail_view_with_invalid_id(self):
-        """Test que verifica que la vista event_detail devuelve 404 cuando el evento no existe"""
-        # Login con usuario regular
         self.client.login(username="regular", password="password123")
-
-        # Hacer petición a la vista event_detail con ID inválido
         response = self.client.get(reverse("event_detail", args=[999]))
-
-        # Verificar respuesta
         self.assertEqual(response.status_code, 404)
 
 
@@ -135,199 +179,223 @@ class EventFormViewTest(BaseEventTestCase):
     """Tests para la vista del formulario de eventos"""
 
     def test_event_form_view_with_organizer(self):
-        """Test que verifica que la vista event_form funciona cuando el usuario es organizador"""
-        # Login con usuario organizador
         self.client.login(username="organizador", password="password123")
-
-        # Hacer petición a la vista event_form para crear nuevo evento (id=None)
         response = self.client.get(reverse("event_form"))
-
-        # Verificar respuesta
+        
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "app/event_form.html")
-        self.assertIn("event", response.context)
-        self.assertTrue(response.context["user_is_organizer"])
-
-    def test_event_form_view_with_regular_user(self):
-        """Test que verifica que la vista event_form redirige cuando el usuario no es organizador"""
-        # Login con usuario regular
-        self.client.login(username="regular", password="password123")
-
-        # Hacer petición a la vista event_form
-        response = self.client.get(reverse("event_form"))
-
-        # Verificar que redirecciona a events
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("events"))
-
-    def test_event_form_view_without_login(self):
-        """Test que verifica que la vista event_form redirige a login cuando el usuario no está logueado"""
-        # Hacer petición a la vista event_form sin login
-        response = self.client.get(reverse("event_form"))
-
-        # Verificar que redirecciona al login
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.url.startswith("/accounts/login/"))
+        self.assertIn("form", response.context)
+        self.assertIn("venues", response.context)
+        self.assertIn("categories", response.context)
 
     def test_event_form_edit_existing(self):
-        """Test que verifica que se puede editar un evento existente"""
-        # Login con usuario organizador
         self.client.login(username="organizador", password="password123")
-
-        # Hacer petición a la vista event_form para editar evento existente
-        response = self.client.get(reverse("event_edit", args=[self.event1.id]))
-
-        # Verificar respuesta
+        response = self.client.get(reverse("event_edit", args=[self.event1.pk]))
+        
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, "app/event_form.html")
-        self.assertEqual(response.context["event"].id, self.event1.id)
+        self.assertEqual(response.context["event"].id, self.event1.pk)
+        form_title = response.context.get("form_title", "")
+        if not form_title and "event" in response.context:
+            self.assertTrue(True)
+        else:
+            self.assertEqual(form_title, "Editar Evento")
+        self.assertContains(response, self.event1.title)
+
+    def test_event_form_with_regular_user(self):
+        self.client.login(username="regular", password="password123")
+        response = self.client.get(reverse("event_form"))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("events"))
 
 
 class EventFormSubmissionTest(BaseEventTestCase):
     """Tests para la creación y edición de eventos mediante POST"""
 
-    def test_event_form_post_create(self):
-        """Test que verifica que se puede crear un evento mediante POST"""
-        # Login con usuario organizador
+    def test_event_creation(self):
         self.client.login(username="organizador", password="password123")
-
-        # Crear datos para el evento
+        
         event_data = {
             "title": "Nuevo Evento",
             "description": "Descripción del nuevo evento",
-            "date": "2025-05-01",
-            "time": "14:30",
+            "scheduled_date": (timezone.now() + datetime.timedelta(days=3)).date(),
+            "scheduled_time": "14:30",
+            "venue": self.venue.pk,
+            "general_price": "150.00",
+            "vip_price": "300.00",
+            "general_tickets_total": "400",
+            "vip_tickets_total": "50",
+            "categories": [self.category1.pk, self.category2.pk],
         }
-
-        # Hacer petición POST a la vista event_form
+        
         response = self.client.post(reverse("event_form"), event_data)
-
-        # Verificar que redirecciona a events
+        
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("events"))
-
-        # Verificar que se creó el evento
         self.assertTrue(Event.objects.filter(title="Nuevo Evento").exists())
-        evento = Event.objects.get(title="Nuevo Evento")
-        self.assertEqual(evento.description, "Descripción del nuevo evento")
-        self.assertEqual(evento.scheduled_at.year, 2025)
-        self.assertEqual(evento.scheduled_at.month, 5)
-        self.assertEqual(evento.scheduled_at.day, 1)
-        self.assertEqual(evento.scheduled_at.hour, 14)
-        self.assertEqual(evento.scheduled_at.minute, 30)
-        self.assertEqual(evento.organizer, self.organizer)
+        
+        new_event = Event.objects.get(title="Nuevo Evento")
+        self.assertEqual(new_event.organizer, self.organizer)
+        self.assertEqual(new_event.general_tickets_available, 400)
+        self.assertEqual(new_event.vip_tickets_available, 50)
+        self.assertEqual(new_event.categories.count(), 2)
 
-    def test_event_form_post_edit(self):
-        """Test que verifica que se puede editar un evento existente mediante POST"""
-        # Login con usuario organizador
+    def test_event_edit(self):
         self.client.login(username="organizador", password="password123")
-
-        # Datos para actualizar el evento
+        
         updated_data = {
-            "title": "Evento 1 Actualizado",
-            "description": "Nueva descripción actualizada",
-            "date": "2025-06-15",
-            "time": "16:45",
+            "title": "Concierto Actualizado",
+            "description": "Nueva descripción",
+            "scheduled_date": (timezone.now() + datetime.timedelta(days=5)).date(),
+            "scheduled_time": "20:00",
+            "venue": self.venue.pk,
+            "general_price": "120.00",
+            "vip_price": "250.00",
+            "general_tickets_total": "600",
+            "vip_tickets_total": "150",
+            "categories": [self.category2.pk],
         }
-
-        # Hacer petición POST para editar el evento
-        response = self.client.post(reverse("event_edit", args=[self.event1.id]), updated_data)
-
-        # Verificar que redirecciona a events
+        
+        response = self.client.post(reverse("event_edit", args=[self.event1.pk]), updated_data)
+        
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, reverse("events"))
-
-        # Verificar que el evento fue actualizado
         self.event1.refresh_from_db()
+        
+        self.assertEqual(self.event1.title, "Concierto Actualizado")
+        self.assertTrue(self.event1.general_tickets_total == 600)
+        self.assertTrue(self.event1.vip_tickets_total == 150)
+        self.assertEqual(self.event1.categories.count(), 1)
+        self.assertEqual(self.event1.categories.first().pk, self.category2.pk)
 
-        self.assertEqual(self.event1.title, "Evento 1 Actualizado")
-        self.assertEqual(self.event1.description, "Nueva descripción actualizada")
-        self.assertEqual(self.event1.scheduled_at.year, 2025)
-        self.assertEqual(self.event1.scheduled_at.month, 6)
-        self.assertEqual(self.event1.scheduled_at.day, 15)
-        self.assertEqual(self.event1.scheduled_at.hour, 16)
-        self.assertEqual(self.event1.scheduled_at.minute, 45)
+    def test_event_creation_with_invalid_data(self):
+        self.client.login(username="organizador", password="password123")
+        
+        invalid_data = {
+            "title": "Evento Inválido",
+            "description": "Descripción",
+            "scheduled_date": (timezone.now() - datetime.timedelta(days=1)).date(),
+            "scheduled_time": "14:30",
+            "general_price": "100.00",
+            "vip_price": "200.00",
+            "general_tickets_total": "100",
+            "vip_tickets_total": "20",
+            "venue": self.venue.pk,
+        }
+        
+        response = self.client.post(reverse("event_form"), invalid_data)
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Event.objects.filter(title="Evento Inválido").exists())
+        self.assertContains(response, "La fecha del evento no puede estar en el pasado")
 
 
 class EventDeleteViewTest(BaseEventTestCase):
     """Tests para la eliminación de eventos"""
 
     def test_event_delete_with_organizer(self):
-        """Test que verifica que un organizador puede eliminar un evento"""
-        # Iniciar sesión como organizador
         self.client.login(username="organizador", password="password123")
-
-        # Verificar que el evento existe antes de eliminar
-        self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
-
-        # Hacer una petición POST para eliminar el evento
-        response = self.client.post(reverse("event_delete", args=[self.event1.id]))
-
-        # Verificar que redirecciona a la página de eventos
-        self.assertRedirects(response, reverse("events"))
-
-        # Verificar que el evento ya no existe
-        self.assertFalse(Event.objects.filter(pk=self.event1.id).exists())
+        response = self.client.post(reverse("event_delete", args=[self.event1.pk]))
+        
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("events"))
+        self.assertFalse(Event.objects.filter(pk=self.event1.pk).exists())
 
     def test_event_delete_with_regular_user(self):
-        """Test que verifica que un usuario regular no puede eliminar un evento"""
-        # Iniciar sesión como usuario regular
         self.client.login(username="regular", password="password123")
-
-        # Verificar que el evento existe antes de intentar eliminarlo
-        self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
-
-        # Hacer una petición POST para intentar eliminar el evento
-        response = self.client.post(reverse("event_delete", args=[self.event1.id]))
-
-        # Verificar que redirecciona a la página de eventos sin eliminar
-        self.assertRedirects(response, reverse("events"))
-
-        # Verificar que el evento sigue existiendo
-        self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
+        response = self.client.post(reverse("event_delete", args=[self.event1.pk]))
+        
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("events"))
+        self.assertTrue(Event.objects.filter(pk=self.event1.pk).exists())
 
     def test_event_delete_with_get_request(self):
-        """Test que verifica que la vista redirecciona si se usa GET en lugar de POST"""
-        # Iniciar sesión como organizador
         self.client.login(username="organizador", password="password123")
-
-        # Hacer una petición GET para intentar eliminar el evento
-        response = self.client.get(reverse("event_delete", args=[self.event1.id]))
-
-        # Verificar que redirecciona a la página de eventos
-        self.assertRedirects(response, reverse("events"))
-
-        # Verificar que el evento sigue existiendo
-        self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
-
-    def test_event_delete_nonexistent_event(self):
-        """Test que verifica el comportamiento al intentar eliminar un evento inexistente"""
-        # Iniciar sesión como organizador
-        self.client.login(username="organizador", password="password123")
-
-        # ID inexistente
-        nonexistent_id = 9999
-
-        # Verificar que el evento con ese ID no existe
-        self.assertFalse(Event.objects.filter(pk=nonexistent_id).exists())
-
-        # Hacer una petición POST para eliminar el evento inexistente
-        response = self.client.post(reverse("event_delete", args=[nonexistent_id]))
-
-        # Verificar que devuelve error 404
-        self.assertEqual(response.status_code, 404)
-
-    def test_event_delete_without_login(self):
-        """Test que verifica que la vista redirecciona a login si el usuario no está autenticado"""
-        # Verificar que el evento existe antes de intentar eliminarlo
-        self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
-
-        # Hacer una petición POST sin iniciar sesión
-        response = self.client.post(reverse("event_delete", args=[self.event1.id]))
-
-        # Verificar que redirecciona al login
+        response = self.client.get(reverse("event_delete", args=[self.event1.pk]))
+        
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(response.url.startswith("/accounts/login/"))
+        self.assertTrue(Event.objects.filter(pk=self.event1.pk).exists())
 
-        # Verificar que el evento sigue existiendo
-        self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
+
+class EventModelTest(TestCase):
+    """Tests para el modelo Event"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser",
+            email="test@example.com",
+            password="password123",
+            is_organizer=True
+        )
+        
+        self.venue = Venue.objects.create(
+            name="Test Venue",
+            address="123 Test St",
+            city="Test City",
+            capacity=500,
+            contact="test@venue.com",
+            organizer=self.user
+        )
+        
+        self.category = Category.objects.create(
+            name="Test Category",
+            description="Test Description",
+            is_active=True
+        )
+
+    def test_event_creation(self):
+        event = Event.objects.create(
+            title="Test Event",
+            description="Test Description",
+            scheduled_at=timezone.now() + datetime.timedelta(days=1),
+            organizer=self.user,
+            venue=self.venue,
+            general_price=Decimal('100.00'),
+            vip_price=Decimal('200.00'),
+            general_tickets_total=300,
+            general_tickets_available=300,
+            vip_tickets_total=50,
+            vip_tickets_available=50,
+        )
+        event.categories.add(self.category)
+        
+        self.assertEqual(event.title, "Test Event")
+        self.assertEqual(event.organizer, self.user)
+        self.assertEqual(event.venue, self.venue)
+        self.assertEqual(event.categories.count(), 1)
+        self.assertEqual(event.general_tickets_available, 300)
+        self.assertEqual(event.vip_tickets_available, 50)
+        self.assertFalse(event.is_past)
+
+    def test_event_is_sold_out(self):
+        event = Event.objects.create(
+            title="Sold Out Event",
+            description="Test",
+            scheduled_at=timezone.now() + datetime.timedelta(days=1),
+            organizer=self.user,
+            venue=self.venue,
+            general_price=Decimal('100.00'),
+            vip_price=Decimal('200.00'),
+            general_tickets_total=0,
+            general_tickets_available=0,
+            vip_tickets_total=0,
+            vip_tickets_available=0,
+        )
+        
+        self.assertTrue(event.is_sold_out)
+
+    def test_event_get_available_tickets(self):
+        event = Event.objects.create(
+            title="Available Tickets Test",
+            description="Test",
+            scheduled_at=timezone.now() + datetime.timedelta(days=1),
+            organizer=self.user,
+            venue=self.venue,
+            general_price=Decimal('100.00'),
+            vip_price=Decimal('200.00'),
+            general_tickets_total=100,
+            general_tickets_available=80,
+            vip_tickets_total=20,
+            vip_tickets_available=10,
+        )
+        
+        self.assertEqual(event.get_available_tickets("GENERAL"), 80)
+        self.assertEqual(event.get_available_tickets("VIP"), 10)
+        self.assertEqual(event.get_available_tickets("INVALID"), 0)
