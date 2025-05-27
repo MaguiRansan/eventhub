@@ -726,8 +726,10 @@ def event_form(request, id=None):
         'venues': venues,
         'categories': categories,
         'initial': initial,
-        'min_date': timezone.now().date() + datetime.timedelta(days=1)
+        'min_date': timezone.now().date() + datetime.timedelta(days=1),
+        'user_is_organizer': request.user.is_organizer  # ← ESTA LÍNEA ES CLAVE
     })
+
 
 @login_required
 def rating_create(request, id):
