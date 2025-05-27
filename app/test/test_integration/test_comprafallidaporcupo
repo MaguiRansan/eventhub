@@ -1,0 +1,37 @@
+import pytest
+from django.urls import reverse
+from app.models import User, Event, Ticket
+from decimal import Decimal
+
+@pytest.mark.django_db
+def test_no_se_pueden_comprar_mas_tickets_de_los_disponibles(client):
+    # Crear usuario común
+    user = User.objects.create_user(username='comprador', password='12345')
+    client.login(username='comprador', password='12345')
+
+    # Crear evento con pocas entradas
+    event = Event.objects.create(
+        title="Evento con poco cupo",
+        general_tickets_available=2,
+        vip_tickets_available=1,
+        general_price=100,
+        vip_price=200
+    )
+
+    # Intentar comprar 3 entradas generales (hay solo 2)
+    response = client.post(
+        reverse('ticket_purchase', args=[event.id]),
+        data={
+            'type': Ticket.TicketType.GENERAL,
+            'quantity': 3,
+            'card_number': '1234567890123456',
+            'expiration_date': '12/30',
+            'cvv': '123',
+            'save_card': False,
+        }
+    )
+
+    # El ticket no debería haberse creado
+    assert Ticket.objects.count() == 0
+    assert response.status_code == 200  # Se queda en el mismo form
+    assert "No hay suficientes entradas" in response.content.decode() or "Ticket form errors" in response.content.decode()
