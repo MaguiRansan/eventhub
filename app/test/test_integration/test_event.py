@@ -4,6 +4,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.models import Event, User
+from app.models import Event, User, Venue
+
 
 
 class BaseEventTestCase(TestCase):
