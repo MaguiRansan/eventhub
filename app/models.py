@@ -13,7 +13,7 @@ import qrcode
 import base64
 from io import BytesIO
 from .fields import EncryptedCharField
-from django.db.models import Avg
+from django.db.models import Avg, DecimalField
 
 
 class User(AbstractUser):
@@ -173,7 +173,8 @@ class Event(models.Model):
         return self
     @property
     def average_rating(self):
-        return self.ratings.aggregate(Avg('score'))['score__avg']
+        result = self.ratings.aggregate(avg_score=Avg('score', output_field=DecimalField()))
+        return result['avg_score']
 
     @property
     def total_ratings_count(self):
