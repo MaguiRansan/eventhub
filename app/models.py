@@ -204,7 +204,7 @@ class Ticket(models.Model):
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name="tickets")
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name="tickets")
 
-    def __str__(self):
+    def _str_(self):
         type_map = {'GENERAL': 'General', 'VIP': 'VIP'}
         return f"{type_map.get(self.type, self.type)} Ticket - {self.event.title} (x{self.quantity})"
 
@@ -251,6 +251,7 @@ class Ticket(models.Model):
 
                 event.save()
 
+
                 self.event = event
                 super().save(*args, **kwargs)
         else:
@@ -283,19 +284,33 @@ class Ticket(models.Model):
     def can_be_deleted_by(self, user):
         return self.can_be_modified_by(user)
 
-    @classmethod
-    def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
-        total_existentes = cls.objects.filter(user=user, event=event).aggregate(
-            total=models.Sum('quantity'))['total'] or 0
-        if total_existentes + quantity > 4:
-            raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+@classmethod
+def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
+    total_existentes = cls.objects.filter(user=user, event=event).aggregate(
+        total=models.Sum('quantity'))['total'] or 0
 
-        ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
-        if not ticket.ticket_code:
-            ticket.ticket_code = ticket._generate_ticket_code()
-        ticket.full_clean()
-        ticket.save()
-        return ticket
+    refund_codes = RefundRequest.objects.filter(
+        user=user,
+        approved=True  
+    ).values_list('ticket_code', flat=True)
+
+    cantidad_reembolsada = cls.objects.filter(
+        user=user,
+        event=event,
+        ticket_code__in=refund_codes
+    ).aggregate(total=models.Sum('quantity'))['total'] or 0
+
+    total_existentes -= cantidad_reembolsada
+
+    if total_existentes + quantity > 4:
+        raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+
+    ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
+    if not ticket.ticket_code:
+        ticket.ticket_code = ticket._generate_ticket_code()
+    ticket.full_clean()
+    ticket.save()
+    return ticket
 
 
 
