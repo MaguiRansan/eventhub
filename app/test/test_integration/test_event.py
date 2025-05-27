@@ -10,7 +10,6 @@ class BaseEventTestCase(TestCase):
     """Clase base con la configuración común para todos los tests de eventos"""
 
     def setUp(self):
-        # Crear un usuario organizador
         self.organizer = User.objects.create_user(
             username="organizador",
             email="organizador@test.com",
@@ -18,7 +17,6 @@ class BaseEventTestCase(TestCase):
             is_organizer=True,
         )
 
-        # Crear un usuario regular
         self.regular_user = User.objects.create_user(
             username="regular",
             email="regular@test.com",
@@ -26,7 +24,6 @@ class BaseEventTestCase(TestCase):
             is_organizer=False,
         )
 
-        # Crear algunos eventos de prueba
         self.event1 = Event.objects.create(
             title="Evento 1",
             description="Descripción del evento 1",
@@ -41,13 +38,8 @@ class BaseEventTestCase(TestCase):
             organizer=self.organizer,
         )
 
-        # Cliente para hacer peticiones
         self.client = Client()
 
-
-# --------------------------------------------------------------------
-# LISTA Y DETALLE DE EVENTOS
-# --------------------------------------------------------------------
 class EventsListViewTest(BaseEventTestCase):
     """Tests para la vista de listado de eventos"""
 
@@ -62,7 +54,6 @@ class EventsListViewTest(BaseEventTestCase):
         self.assertEqual(len(response.context["events"]), 2)
         self.assertFalse(response.context["user_is_organizer"])
 
-        # Los eventos deben venir ordenados por fecha ascendente
         events = list(response.context["events"])
         self.assertEqual(events[0].id, self.event1.id)
         self.assertEqual(events[1].id, self.event2.id)
@@ -103,10 +94,6 @@ class EventDetailViewTest(BaseEventTestCase):
         response = self.client.get(reverse("event_detail", args=[999]))
         self.assertEqual(response.status_code, 404)
 
-
-# --------------------------------------------------------------------
-# FORMULARIO (GET)
-# --------------------------------------------------------------------
 class EventFormViewTest(BaseEventTestCase):
     """Tests para la vista del formulario de eventos"""
 
@@ -136,10 +123,6 @@ class EventFormViewTest(BaseEventTestCase):
         self.assertTemplateUsed(response, "app/event_form.html")
         self.assertEqual(response.context["event"].id, self.event1.id)
 
-
-# --------------------------------------------------------------------
-# FORMULARIO (POST)
-# --------------------------------------------------------------------
 class EventFormSubmissionTest(BaseEventTestCase):
     """Tests para la creación y edición de eventos mediante POST"""
 
@@ -158,7 +141,6 @@ def test_event_form_post_create(self):
     }
     response = self.client.post(reverse("event_create"), data=event_data)
 
-    # TEMPORAL: para depurar si falla
     print(response.context["form"].errors)
     print(response.context["form"].non_field_errors())
 
@@ -184,18 +166,12 @@ def test_event_form_post_edit(self):
     }
     response = self.client.post(reverse("event_edit", args=[self.event1.id]), data=updated_data)
 
-    # TEMPORAL: para depurar si falla
     print(response.context["form"].errors)
     print(response.context["form"].non_field_errors())
 
     self.event1.refresh_from_db()
     self.assertRedirects(response, reverse("event_detail", args=[self.event1.id]))
 
-
-
-# --------------------------------------------------------------------
-# ELIMINAR EVENTO
-# --------------------------------------------------------------------
 class EventDeleteViewTest(BaseEventTestCase):
     """Tests para la eliminación de eventos"""
 
@@ -214,7 +190,6 @@ class EventDeleteViewTest(BaseEventTestCase):
     def test_event_delete_with_get_request(self):
         self.client.login(username="organizador", password="password123")
         response = self.client.get(reverse("event_delete", args=[self.event1.id]))
-        # GET ⇒ redirige al detalle (misma lógica que tu vista)
         self.assertRedirects(response, reverse("event_detail", args=[self.event1.id]))
         self.assertTrue(Event.objects.filter(pk=self.event1.id).exists())
 
