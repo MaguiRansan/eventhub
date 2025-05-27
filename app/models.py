@@ -13,7 +13,7 @@ import qrcode
 import base64
 from io import BytesIO
 from .fields import EncryptedCharField
-
+from django.db import transaction
 
 class User(AbstractUser):
     is_organizer = models.BooleanField(default=False)
@@ -143,8 +143,8 @@ class Event(models.Model):
         return True, event
 
     def update(self, title=None, description=None, scheduled_at=None, organizer=None,
-               general_price=None, vip_price=None, general_tickets=None, vip_tickets=None,
-               venue=None, categories=None):
+        general_price=None, vip_price=None, general_tickets=None, vip_tickets=None,
+        venue=None, categories=None):
         self.title = title or self.title
         self.description = description or self.description
         self.scheduled_at = scheduled_at or self.scheduled_at
@@ -180,8 +180,7 @@ class Rating(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('event', 'user')  # Garantiza que un usuario no pueda calificar el mismo evento dos veces
-
+        unique_together = ('event', 'user')  
     def __str__(self):
         return f"{self.user.username} - {self.score} estrellas"
 
@@ -205,7 +204,7 @@ class Ticket(models.Model):
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name="tickets")
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name="tickets")
 
-    def __str__ (self):
+    def __str__(self):
         type_map = {'GENERAL': 'General', 'VIP': 'VIP'}
         return f"{type_map.get(self.type, self.type)} Ticket - {self.event.title} (x{self.quantity})"
 
@@ -231,19 +230,31 @@ class Ticket(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+
         if not self.ticket_code:
             self.ticket_code = self._generate_ticket_code()
+
         self._calculate_pricing()
+
         if is_new:
-            available = self.event.get_available_tickets(self.type)
-            if available < self.quantity:
-                raise ValidationError(f"No hay suficientes entradas {self.type.lower()} disponibles")
-            if self.type == self.TicketType.GENERAL:
-                self.event.general_tickets_available -= self.quantity
-            else:
-                self.event.vip_tickets_available -= self.quantity
-            self.event.save()
-        super().save(*args, **kwargs)
+            with transaction.atomic():
+                event = Event.objects.select_for_update().get(pk=self.event.pk)
+
+                available = event.get_available_tickets(self.type)
+                if available < self.quantity:
+                    raise ValidationError(f"No hay suficientes entradas {self.type.lower()} disponibles")
+
+                if self.type == self.TicketType.GENERAL:
+                    event.general_tickets_available -= self.quantity
+                else:
+                    event.vip_tickets_available -= self.quantity
+
+                event.save()
+
+                self.event = event
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
     def _generate_ticket_code(self):
         return f"{self.event.title[:4].upper()}-{uuid.uuid4().hex[:8]}"
@@ -274,10 +285,18 @@ class Ticket(models.Model):
 
     @classmethod
     def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
+        total_existentes = cls.objects.filter(user=user, event=event).aggregate(
+            total=models.Sum('quantity'))['total'] or 0
+        if total_existentes + quantity > 4:
+            raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+
         ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
+        if not ticket.ticket_code:
+            ticket.ticket_code = ticket._generate_ticket_code()
         ticket.full_clean()
         ticket.save()
         return ticket
+
 
 
 class PaymentInfo(models.Model):
