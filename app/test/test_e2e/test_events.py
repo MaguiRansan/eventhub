@@ -204,7 +204,7 @@ class EventCRUDTest(EventBaseTest):
             except:
                 continue
 
-        # Seleccionar venue
+
         venue_selectors = ["select[name='venue']", "#id_venue"]
         for selector in venue_selectors:
             try:
@@ -214,7 +214,7 @@ class EventCRUDTest(EventBaseTest):
             except:
                 continue
 
-        # Buscar inputs de tickets con múltiples selectores
+
         tickets_total_selectors = [
             "input[name='general_tickets_total']",
             "#id_general_tickets_total",
@@ -247,7 +247,7 @@ class EventCRUDTest(EventBaseTest):
             except:
                 continue
 
-        # Buscar y llenar campo de precio si existe
+
         price_selectors = [
             "input[name='general_price']",
             "#id_general_price",
@@ -263,7 +263,6 @@ class EventCRUDTest(EventBaseTest):
             except:
                 continue
 
-        # Enviar formulario con múltiples opciones
         submit_selectors = [
             "button:has-text('Crear Evento')",
             "input[type='submit']",
@@ -284,7 +283,7 @@ class EventCRUDTest(EventBaseTest):
                 continue
 
         if not submitted:
-            # Fallback: usar cualquier botón visible
+
             buttons = self.page.locator("button").all()
             for button in buttons:
                 try:
@@ -298,15 +297,14 @@ class EventCRUDTest(EventBaseTest):
         if submitted:
             self.page.wait_for_load_state("networkidle", timeout=30000)
 
-            # Verificar redirección - puede ser a detalle del evento o lista de eventos
             try:
                 expect(self.page).to_have_url(re.compile(r"/events/\d+/"), timeout=30000)
             except:
                 try:
                     expect(self.page).to_have_url(re.compile(r"/events/"), timeout=30000)
                 except:
-                    # Si no redirige como esperamos, verificar que el evento se creó
+
                     self.assertTrue(Event.objects.filter(title="Nuevo Evento E2E").exists())
         else:
-            # Si no pudo enviar el formulario, al menos verificar que la página carga
+
             expect(self.page.locator("body")).to_be_visible()
