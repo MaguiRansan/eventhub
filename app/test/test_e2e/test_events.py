@@ -50,6 +50,7 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
             description="Music events",
             is_active=True
         )
+
     def _take_screenshot(self, step_name: str):
         try:
             self.page.screenshot(
@@ -58,7 +59,6 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
         )
         except Exception as e:
             logger.error(f"Error taking screenshot: {str(e)}")
-
 
     def _login_user(self, username: str, password: str):
         try:
@@ -182,7 +182,6 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
             title_input = self.page.get_by_label("Título").or_(
                 self.page.get_by_label("Title")).or_(
                 self.page.locator('input[name="title"]'))
-          
             description_input = self.page.get_by_label("Descripción").or_(
                 self.page.get_by_label("Description")).or_(
                 self.page.locator('textarea[name="description"]'))

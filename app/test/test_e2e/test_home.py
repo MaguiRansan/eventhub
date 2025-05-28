@@ -11,13 +11,10 @@ class HomePageDisplayTest(BaseE2ETest):
     def test_home_page_loads(self):
         """Test que verifica que la home carga correctamente"""
         self.page.goto(f"{self.live_server_url}/")
-
         logo = self.page.get_by_text("EventHub", exact=True)
         expect(logo).to_be_visible()
         expect(logo).to_have_attribute("href", "/")
-
         expect(self.page.get_by_text("Bienvenidos a EventHub")).to_be_visible()
-
         expect(
             self.page.get_by_text(
                 "Descubrí los mejores eventos cerca tuyo"
@@ -41,16 +38,10 @@ class HomeAuthenticationTest(BaseE2ETest):
     def test_auth_buttons_visibility_for_anonymous_user(self):
         """Test que verifica la visibilidad de los botones para usuarios anónimos"""
         self.page.goto(f"{self.live_server_url}/")
-
-     
         login_btn = self.page.get_by_role("link", name="Ingresá")
         expect(login_btn).to_be_visible()
-
-    
         signup_btn = self.page.get_by_role("link", name="Creá tu cuenta")
         expect(signup_btn).to_be_visible()
-
-        
         logout_btn = self.page.get_by_role("button", name="Salir")
         expect(logout_btn).to_have_count(0)
 
