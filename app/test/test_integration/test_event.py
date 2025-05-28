@@ -9,7 +9,6 @@ class BaseEventTestCase(TestCase):
     """Clase base con la configuración común para todos los tests de eventos"""
 
     def setUp(self):
-        # Crear un usuario organizador
         self.organizer = User.objects.create_user(
             username="organizador",
             email="organizador@test.com",
@@ -17,7 +16,7 @@ class BaseEventTestCase(TestCase):
             is_organizer=True,
         )
 
-        # Crear un usuario regular
+
         self.regular_user = User.objects.create_user(
             username="regular",
             email="regular@test.com",
@@ -25,15 +24,15 @@ class BaseEventTestCase(TestCase):
             is_organizer=False,
         )
 
-        # Crear venue con organizer - AUMENTAR CAPACIDAD PARA LOS TESTS
+
         self.venue = Venue.objects.create(
             name="Venue de Prueba",
             address="Calle Falsa 123",
-            capacity=300,  # Aumentado de 100 a 300
+            capacity=300,
             organizer=self.organizer
         )
 
-        # Crear algunos eventos de prueba
+
         self.event1 = Event.objects.create(
             title="Evento 1",
             description="Descripción del evento 1",
@@ -62,7 +61,7 @@ class BaseEventTestCase(TestCase):
             vip_tickets_available=15
         )
 
-        # Cliente para hacer peticiones
+
         self.client = Client()
 
 
@@ -79,7 +78,7 @@ class EventsListViewTest(BaseEventTestCase):
         self.assertIn("events", response.context)
         self.assertEqual(len(response.context["events"]), 2)
 
-        # Verificar orden por fecha
+
         events = list(response.context["events"])
         self.assertEqual(events[0].id, self.event1.id)
         self.assertEqual(events[1].id, self.event2.id)
@@ -173,8 +172,8 @@ class EventFormSubmissionTest(BaseEventTestCase):
             "venue": self.venue.id,
             "general_price": "100.00",
             "vip_price": "200.00",
-            "general_tickets_total": 80,  # Reducido de 100 a 80
-            "vip_tickets_total": 40,      # Reducido de 50 a 40
+            "general_tickets_total": 80,
+            "vip_tickets_total": 40,
             "general_tickets_available": 50,
             "vip_tickets_available": 20
         }
@@ -186,10 +185,10 @@ class EventFormSubmissionTest(BaseEventTestCase):
 
         self.assertEqual(response.status_code, 302)
 
-        # Verificar que se creó el evento
+
         self.assertTrue(Event.objects.filter(title="Nuevo Evento").exists())
 
-        # Obtener el evento creado y verificar que redirecciona a su página de detalle
+
         nuevo_evento = Event.objects.get(title="Nuevo Evento")
         expected_url = reverse("event_detail", args=[nuevo_evento.id])
         self.assertEqual(response.url, expected_url)
@@ -206,8 +205,8 @@ class EventFormSubmissionTest(BaseEventTestCase):
             "venue": self.venue.id,
             "general_price": "120.00",
             "vip_price": "220.00",
-            "general_tickets_total": 90,  # Reducido de 120 a 90
-            "vip_tickets_total": 50,      # Reducido de 60 a 50
+            "general_tickets_total": 90,
+            "vip_tickets_total": 50,
             "general_tickets_available": 60,
             "vip_tickets_available": 25
         }

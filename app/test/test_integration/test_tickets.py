@@ -16,14 +16,13 @@ class TicketPurchaseIntegrationTest(TestCase):
             is_organizer=True
         )
 
-        # Crear usuario comprador
         self.user = User.objects.create_user(
             username="comprador",
             email="comprador@test.com",
             password="12345"
         )
 
-        # Crear venue con organizer
+
         self.venue = Venue.objects.create(
             name="Auditorio Central",
             address="Av. Siempre Viva 742",
@@ -31,7 +30,7 @@ class TicketPurchaseIntegrationTest(TestCase):
             organizer=self.organizer
         )
 
-        # Crear evento (sin capacity)
+
         self.event = Event.objects.create(
             title="Evento Integrado",
             description="Prueba de integración",
@@ -50,7 +49,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         """Compra válida: el usuario tiene 2 entradas y pide 2 más"""
         self.client.login(username="comprador", password="12345")
 
-        # Crear ticket previo de 2 entradas
+
         Ticket.objects.create(
             user=self.user,
             event=self.event,
@@ -59,7 +58,7 @@ class TicketPurchaseIntegrationTest(TestCase):
             ticket_code="TEST-123"
         )
 
-        # Enviar POST para comprar 2 más
+
         response = self.client.post(self.url, {
             "quantity": 2,
             "type": "GENERAL",
@@ -83,7 +82,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         """Compra inválida: ya tiene 4 entradas, intenta comprar 1 más"""
         self.client.login(username="comprador", password="12345")
 
-        # Crear tickets previos: total 4 entradas
+
         Ticket.objects.create(
             user=self.user,
             event=self.event,
@@ -99,7 +98,7 @@ class TicketPurchaseIntegrationTest(TestCase):
             ticket_code="TEST-456"
         )
 
-        # Intentar comprar 1 entrada más
+
         response = self.client.post(self.url, {
             "quantity": 1,
             "type": "GENERAL",
@@ -123,7 +122,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         """Los tickets VIP tienen un límite de 2 por compra"""
         self.client.login(username="comprador", password="12345")
 
-        # Intentar comprar 3 tickets VIP (debería fallar)
+
         response = self.client.post(self.url, {
             "quantity": 3,
             "type": "VIP",

@@ -287,13 +287,22 @@ def organizer_tickets(request, event_id=None):
 @login_required
 @transaction.atomic
 def ticket_purchase(request, event_id):
-    event: Event = get_object_or_404(Event, pk=event_id)
+    event = get_object_or_404(Event, pk=event_id)
 
     if request.user.is_organizer:
-        return redirect('event_detail', id=event.pk)  # uso seguro de id: event.pk
+        return redirect('event_detail', id=event.pk)
 
-    # Calcular entradas ya compradas por el usuario
-    total_ya_compradas = Ticket.objects.filter(user=request.user, event=event).aggregate(
+
+    refund_codes = RefundRequest.objects.filter(
+        user=request.user,
+        approved__in=[True, None]
+    ).values_list('ticket_code', flat=True)
+
+
+    total_ya_compradas = Ticket.objects.filter(
+        user=request.user,
+        event=event
+    ).exclude(ticket_code__in=refund_codes).aggregate(
         total=Sum('quantity')
     )['total'] or 0
 
@@ -314,23 +323,23 @@ def ticket_purchase(request, event_id):
                     ticket.event = event
                     ticket.ticket_code = ticket._generate_ticket_code()
 
-                    # Calcular precios
+
                     price = event.general_price if ticket.type == Ticket.TicketType.GENERAL else event.vip_price
                     ticket.subtotal = price * Decimal(ticket.quantity)
                     ticket.taxes = ticket.subtotal * Decimal('0.10')
                     ticket.total = ticket.subtotal + ticket.taxes
                     ticket.payment_confirmed = True
 
-                    # Procesar pago
+
                     payment_info = payment_form.save(commit=False)
                     payment_info.user = request.user
                     if payment_form.cleaned_data.get('save_card'):
                         payment_info.save()
 
-                    # Guardar ticket
+
                     ticket.save()
 
-                    # Actualizar disponibilidad del evento
+
                     if ticket.type == Ticket.TicketType.GENERAL:
                         event.general_tickets_available -= ticket.quantity
                     else:
@@ -549,10 +558,17 @@ def ticket_use(request, ticket_id):
 
     return redirect('event_detail', id=ticket.event.id)
 
+from app.models import RefundRequest  # Asegurate de importar el modelo si no está
+
 @login_required
 def ticket_list(request):
     now = timezone.now()
     tickets = Ticket.objects.filter(user=request.user).select_related('event').order_by('-buy_date')
+
+    # 🔴 Excluir tickets con solicitud de reembolso (aprobada o pendiente)
+    refund_codes = RefundRequest.objects.exclude(approved=False).values_list('ticket_code', flat=True)
+    tickets = tickets.exclude(ticket_code__in=refund_codes)
+
     filter_form = TicketFilterForm(request.GET or None)
 
     if filter_form.is_valid():
@@ -572,6 +588,7 @@ def ticket_list(request):
         'filter_form': filter_form,
         'now': now
     })
+
 
 @login_required
 def category_list(request):

@@ -15,6 +15,7 @@ from io import BytesIO
 from .fields import EncryptedCharField
 from django.contrib import messages
 from django.shortcuts import redirect
+from django.db import transaction
 
 
 class User(AbstractUser):
@@ -230,19 +231,32 @@ class Ticket(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+
         if not self.ticket_code:
             self.ticket_code = self._generate_ticket_code()
+
         self._calculate_pricing()
+
         if is_new:
-            available = self.event.get_available_tickets(self.type)
-            if available < self.quantity:
-                raise ValidationError(f"No hay suficientes entradas {self.type.lower()} disponibles")
-            if self.type == self.TicketType.GENERAL:
-                self.event.general_tickets_available -= self.quantity
-            else:
-                self.event.vip_tickets_available -= self.quantity
-            self.event.save()
-        super().save(*args, **kwargs)
+            with transaction.atomic():
+                event = Event.objects.select_for_update().get(pk=self.event.pk)
+
+                available = event.get_available_tickets(self.type)
+                if available < self.quantity:
+                    raise ValidationError(f"No hay suficientes entradas {self.type.lower()} disponibles")
+
+                if self.type == self.TicketType.GENERAL:
+                    event.general_tickets_available -= self.quantity
+                else:
+                    event.vip_tickets_available -= self.quantity
+
+                event.save()
+
+
+                self.event = event
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
     def _generate_ticket_code(self):
         return f"{self.event.title[:4].upper()}-{uuid.uuid4().hex[:8]}"
@@ -271,19 +285,34 @@ class Ticket(models.Model):
     def can_be_deleted_by(self, user):
         return self.can_be_modified_by(user)
 
-    @classmethod
-    def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
-        total_existentes = cls.objects.filter(user=user, event=event).aggregate(
-            total=models.Sum('quantity'))['total'] or 0
-        if total_existentes + quantity > 4:
-            raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+@classmethod
+def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
+    total_existentes = cls.objects.filter(user=user, event=event).aggregate(
+        total=models.Sum('quantity'))['total'] or 0
 
-        ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
-        if not ticket.ticket_code:
-            ticket.ticket_code = ticket._generate_ticket_code()
-        ticket.full_clean()
-        ticket.save()
-        return ticket
+    refund_codes = RefundRequest.objects.filter(
+        user=user,
+        approved=True  # Sólo aprobados para descontar
+    ).values_list('ticket_code', flat=True)
+
+    cantidad_reembolsada = cls.objects.filter(
+        user=user,
+        event=event,
+        ticket_code__in=refund_codes
+    ).aggregate(total=models.Sum('quantity'))['total'] or 0
+
+    total_existentes -= cantidad_reembolsada
+
+    if total_existentes + quantity > 4:
+        raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+
+    ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
+    if not ticket.ticket_code:
+        ticket.ticket_code = ticket._generate_ticket_code()
+    ticket.full_clean()
+    ticket.save()
+    return ticket
+
 
 
 
@@ -339,8 +368,12 @@ class RefundRequest(models.Model):
     approval_date = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    @property
-    def event(self):
-        from .models import Ticket
+@property
+def event(self):
+    from .models import Ticket
+    try:
         ticket = Ticket.objects.get(ticket_code=self.ticket_code)
         return ticket.event
+    except Ticket.DoesNotExist:
+        return None
+
