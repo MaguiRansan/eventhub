@@ -1,17 +1,18 @@
 import datetime
 from decimal import Decimal
+
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
-from django.core.exceptions import ValidationError
 from app.models import Event, User, Venue, Category
 
 
 class EventModelTest(TestCase):
     def setUp(self):
         self.organizer = User.objects.create_user(
-            username="organizador_test",
-            email="organizador@example.com",
-            password="password123",
+            username="organizador",
+            email="organizador@test.com",
+            password="test123",
             is_organizer=True,
         )
         
@@ -79,14 +80,16 @@ class EventModelTest(TestCase):
 
     def test_event_validate_with_invalid_data(self):
         """Test que verifica la validación de eventos con datos inválidos"""
+       
         errors = Event.validate(
             title="", 
             description="Descripción válida", 
             scheduled_at=self.future_date
         )
         self.assertIn("title", errors)
+        self.assertEqual(errors["title"], "Por favor ingrese un titulo")
         
-        
+    
         errors = Event.validate(
             title="Título válido", 
             description="", 
@@ -94,15 +97,16 @@ class EventModelTest(TestCase):
         )
         self.assertIn("description", errors)
         
-       
+        
         errors = Event.validate(
             title="Título válido", 
             description="Descripción válida", 
             scheduled_at=self.past_date
         )
         self.assertIn("scheduled_at", errors)
+        self.assertEqual(errors["scheduled_at"], "La fecha del evento debe ser en el futuro")
         
-        
+      
         errors = Event.validate(
             title="Título válido", 
             description="Descripción válida", 
@@ -110,6 +114,7 @@ class EventModelTest(TestCase):
             general_tickets=-1
         )
         self.assertIn("general_tickets", errors)
+        self.assertEqual(errors["general_tickets"], "Ingrese una cantidad válida de tickets generales")
         
         
         errors = Event.validate(
@@ -119,6 +124,7 @@ class EventModelTest(TestCase):
             vip_tickets=-1
         )
         self.assertIn("vip_tickets", errors)
+        self.assertEqual(errors["vip_tickets"], "Ingrese una cantidad válida de tickets VIP")
 
     def test_event_new_with_valid_data(self):
         """Test que verifica la creación de eventos con datos válidos"""
@@ -138,32 +144,43 @@ class EventModelTest(TestCase):
         self.assertTrue(success)
         self.assertIsInstance(result, Event)
         
-        event = Event.objects.get(pk=result.pk)
-        self.assertEqual(event.title, "Nuevo evento")
-        self.assertEqual(event.organizer, self.organizer)
-        self.assertEqual(event.venue, self.venue)
-        self.assertEqual(event.general_tickets_total, 200)
-        self.assertEqual(event.general_tickets_available, 200)
-        self.assertEqual(event.vip_tickets_total, 50)
-        self.assertEqual(event.vip_tickets_available, 50)
-        self.assertIn(self.category, event.categories.all())
+       
+        if success and isinstance(result, Event):
+            self.assertEqual(result.title, "Nuevo evento")
+            self.assertEqual(result.description, "Descripción del nuevo evento")
+            self.assertEqual(result.organizer, self.organizer)
+            self.assertEqual(result.venue, self.venue)
+            self.assertEqual(result.general_tickets_total, 200)
+            self.assertEqual(result.general_tickets_available, 200)
+            self.assertEqual(result.vip_tickets_total, 50)
+            self.assertEqual(result.vip_tickets_available, 50)
+        
+    
+        saved_event = Event.objects.get(title="Nuevo evento")
+        self.assertEqual(saved_event.description, "Descripción del nuevo evento")
+        self.assertEqual(saved_event.organizer, self.organizer)
+        self.assertIn(self.category, saved_event.categories.all())
 
     def test_event_new_with_invalid_data(self):
-        """Test que verifica que no se crean eventos con datos inválidos"""
+        """Test que verifica que Event.new() retorna errores con datos inválidos"""
         initial_count = Event.objects.count()
         
-       
+        
         success, errors = Event.new(
             title="",
             description="Descripción válida",
             scheduled_at=self.future_date,
             organizer=self.organizer
         )
+        
         self.assertFalse(success)
+        self.assertIsInstance(errors, dict)
         self.assertIn("title", errors)
+        if isinstance(errors, dict) and "title" in errors:
+            self.assertEqual(errors["title"], "Por favor ingrese un titulo")
         self.assertEqual(Event.objects.count(), initial_count)
         
-        
+  
         success, errors = Event.new(
             title="Título válido",
             description="Descripción válida",
@@ -171,7 +188,10 @@ class EventModelTest(TestCase):
             organizer=self.organizer
         )
         self.assertFalse(success)
+        self.assertIsInstance(errors, dict)
         self.assertIn("scheduled_at", errors)
+        if isinstance(errors, dict) and "scheduled_at" in errors:
+            self.assertEqual(errors["scheduled_at"], "La fecha del evento debe ser en el futuro")
         self.assertEqual(Event.objects.count(), initial_count)
 
     def test_event_update(self):
@@ -244,7 +264,7 @@ class EventModelTest(TestCase):
             vip_tickets_available=20
         )
         
-        
+     
         event.update(
             title="Solo título cambiado",
             vip_tickets=30
@@ -255,7 +275,7 @@ class EventModelTest(TestCase):
         self.assertEqual(updated_event.description, "Descripción original")  
         self.assertEqual(updated_event.vip_tickets_total, 30)
         self.assertEqual(updated_event.vip_tickets_available, 30)  
-        self.assertEqual(updated_event.general_tickets_total, 100)  
+        self.assertEqual(updated_event.general_tickets_total, 100) 
 
     def test_event_is_past_property(self):
         """Test para la propiedad is_past"""
@@ -289,11 +309,11 @@ class EventModelTest(TestCase):
         )
         self.assertFalse(event.is_sold_out)
         
-     
-        event.general_tickets_available = 0
-        self.assertFalse(event.is_sold_out) 
-        
       
+        event.general_tickets_available = 0
+        self.assertFalse(event.is_sold_out)  
+        
+       
         event.vip_tickets_available = 0
         self.assertTrue(event.is_sold_out)
 
@@ -313,7 +333,7 @@ class EventModelTest(TestCase):
         self.assertEqual(event.get_available_tickets('GENERAL'), 80)
         self.assertEqual(event.get_available_tickets('VIP'), 30)
         
-        
+      
         self.assertEqual(event.get_available_tickets('INVALID'), 0)
 
     def test_formatted_date_property(self):

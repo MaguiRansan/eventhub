@@ -106,7 +106,7 @@ def event_detail(request, id):
     rating_id = request.GET.get('rating_id') or request.POST.get('rating_id')
     event_has_started = event.scheduled_at <= now
 
-    has_ticket = Ticket.objects.filter(event=event, user=request.user).exists()  # 🔹 Agregado
+    has_ticket = Ticket.objects.filter(event=event, user=request.user).exists()  
 
     if rating_id:
         rating_to_edit = get_object_or_404(Rating, pk=rating_id, event=event)
@@ -123,9 +123,9 @@ def event_detail(request, id):
 
         if form.is_valid():
             if not event_has_started:
-                form.add_error(None, "Solo podés calificar eventos que ya ocurrieron.")  # 🔹 Validación
+                form.add_error(None, "Solo podés calificar eventos que ya ocurrieron.")  
             elif not has_ticket:
-                form.add_error(None, "Solo podés calificar si tenés una entrada para este evento.")  # 🔹 Validación
+                form.add_error(None, "Solo podés calificar si tenés una entrada para este evento.") 
             else:
                 try:
                     new_rating = form.save(commit=False)
@@ -146,7 +146,7 @@ def event_detail(request, id):
         'can_edit': user_is_organizer,
         'now': now,
         'event_has_started': event_has_started,
-        'has_ticket': has_ticket,  # 🔹 Para usarlo en el template si querés
+        'has_ticket': has_ticket,  
     }
     return render(request, 'app/event_detail.html', context)
 
@@ -291,14 +291,34 @@ def organizer_tickets(request, event_id=None):
 @transaction.atomic
 def ticket_purchase(request, event_id):
     event = get_object_or_404(Event, pk=event_id)
+
     if request.user.is_organizer:
-        return redirect('event_detail', id=event_id)
+        return redirect('event_detail', id=event.pk)
+
+
+    refund_codes = RefundRequest.objects.filter(
+        user=request.user,
+        approved__in=[True, None]
+    ).values_list('ticket_code', flat=True)
+
+
+    total_ya_compradas = Ticket.objects.filter(
+        user=request.user,
+        event=event
+    ).exclude(ticket_code__in=refund_codes).aggregate(
+        total=Sum('quantity')
+    )['total'] or 0
 
     if request.method == 'POST':
         ticket_form = TicketForm(request.POST, event=event)
         payment_form = PaymentForm(request.POST)
 
         if ticket_form.is_valid() and payment_form.is_valid():
+            cantidad_a_comprar = ticket_form.cleaned_data['quantity']
+            if total_ya_compradas + cantidad_a_comprar > 4:
+                messages.error(request, "No podés comprar más de 4 entradas para este evento.")
+                return redirect('ticket_purchase', event_id=event.pk)
+
             try:
                 with transaction.atomic():
                     ticket = ticket_form.save(commit=False)
@@ -306,19 +326,22 @@ def ticket_purchase(request, event_id):
                     ticket.event = event
                     ticket.ticket_code = ticket._generate_ticket_code()
 
+
                     price = event.general_price if ticket.type == Ticket.TicketType.GENERAL else event.vip_price
                     ticket.subtotal = price * Decimal(ticket.quantity)
                     ticket.taxes = ticket.subtotal * Decimal('0.10')
                     ticket.total = ticket.subtotal + ticket.taxes
                     ticket.payment_confirmed = True
 
+
                     payment_info = payment_form.save(commit=False)
                     payment_info.user = request.user
-
                     if payment_form.cleaned_data.get('save_card'):
                         payment_info.save()
 
+
                     ticket.save()
+
 
                     if ticket.type == Ticket.TicketType.GENERAL:
                         event.general_tickets_available -= ticket.quantity
@@ -326,13 +349,13 @@ def ticket_purchase(request, event_id):
                         event.vip_tickets_available -= ticket.quantity
                     event.save()
 
+                    messages.success(request, "Compra realizada con éxito.")
                     return redirect('ticket_detail', ticket_id=ticket.id)
 
             except Exception as e:
-                print(f"Error during ticket purchase: {str(e)}")
+                messages.error(request, f"Error al procesar la compra: {str(e)}")
         else:
-            print("Ticket form errors:", ticket_form.errors)
-            print("Payment form errors:", payment_form.errors)
+            messages.error(request, "Revisá los campos ingresados.")
     else:
         ticket_form = TicketForm(event=event)
         payment_form = PaymentForm()
@@ -341,6 +364,7 @@ def ticket_purchase(request, event_id):
         'event': event,
         'ticket_form': ticket_form,
         'payment_form': payment_form,
+        'total_ya_compradas': total_ya_compradas
     })
 
 @login_required
@@ -398,6 +422,21 @@ def ticket_update(request, ticket_id):
                     type_changed = original_type != new_type
                     quantity_diff = new_quantity - original_quantity
 
+                   
+                    if quantity_diff > 0:  
+                       
+                        total_otros_tickets = Ticket.objects.filter(
+                            user=request.user,
+                            event=ticket.event
+                        ).exclude(pk=ticket.pk).aggregate(
+                            total=Sum('quantity')
+                        )['total'] or 0
+
+                        if total_otros_tickets + new_quantity > 4:
+                            messages.error(request, "No podés tener más de 4 entradas para este evento.")
+                            return redirect('ticket_update', ticket_id=ticket_id)
+
+                    
                     if type_changed or quantity_diff > 0:
                         if type_changed:
                             available = ticket.event.get_available_tickets(new_type)
@@ -410,23 +449,28 @@ def ticket_update(request, ticket_id):
                                 messages.error(request, f"No hay suficientes entradas {new_type.lower()} disponibles")
                                 return redirect('ticket_update', ticket_id=ticket_id)
 
+                   
                     price = ticket.event.general_price if new_type == Ticket.TicketType.GENERAL else ticket.event.vip_price
 
                     updated_ticket.subtotal = price * Decimal(new_quantity)
                     updated_ticket.taxes = updated_ticket.subtotal * Decimal('0.10')
                     updated_ticket.total = updated_ticket.subtotal + updated_ticket.taxes
 
+                    
                     if type_changed:
+                      
                         if original_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available += original_quantity
                         else:
                             ticket.event.vip_tickets_available += original_quantity
 
+                       
                         if new_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available -= new_quantity
                         else:
                             ticket.event.vip_tickets_available -= new_quantity
                     else:
+                      
                         if new_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available -= quantity_diff
                         else:
@@ -445,11 +489,18 @@ def ticket_update(request, ticket_id):
     else:
         form = TicketForm(instance=ticket, event=ticket.event)
 
+ 
+    total_ya_compradas = Ticket.objects.filter(
+        user=request.user,
+        event=ticket.event
+    ).aggregate(total=Sum('quantity'))['total'] or 0
+
     return render(request, 'app/ticket_update.html', {
         'form': form,
         'ticket': ticket,
         'now': timezone.now(),
-        'original_price': ticket.event.general_price if ticket.type == Ticket.TicketType.GENERAL else ticket.event.vip_price
+        'original_price': ticket.event.general_price if ticket.type == Ticket.TicketType.GENERAL else ticket.event.vip_price,
+        'total_ya_compradas': total_ya_compradas  
     })
 
 @login_required
@@ -463,7 +514,7 @@ def ticket_delete(request, ticket_id):
 
     if request.user.is_organizer and request.user == ticket.event.organizer:
         redirect_url = 'organizer_tickets_event'
-        redirect_kwargs = {'event_id': ticket.event.id}
+        redirect_kwargs = {'event_id': ticket.event.pk}
     else:
         redirect_url = 'ticket_list'
         redirect_kwargs = {}
@@ -498,7 +549,7 @@ def ticket_use(request, ticket_id):
 
     if not request.user.is_organizer or ticket.event.organizer != request.user:
         messages.error(request, "No tienes permiso para marcar este ticket")
-        return redirect('event_detail', id=ticket.event.id)
+        return redirect('event_detail', id=ticket.event.pk)
 
     if request.method == 'POST':
         if ticket.is_used:
@@ -508,12 +559,19 @@ def ticket_use(request, ticket_id):
             ticket.save()
             messages.success(request, f"Ticket #{ticket.ticket_code} marcado como usado")
 
-    return redirect('event_detail', id=ticket.event.id)
+    return redirect('event_detail', id=ticket.event.pk)
+
+from app.models import RefundRequest  
 
 @login_required
 def ticket_list(request):
     now = timezone.now()
     tickets = Ticket.objects.filter(user=request.user).select_related('event').order_by('-buy_date')
+
+   
+    refund_codes = RefundRequest.objects.exclude(approved=False).values_list('ticket_code', flat=True)
+    tickets = tickets.exclude(ticket_code__in=refund_codes)
+
     filter_form = TicketFilterForm(request.GET or None)
 
     if filter_form.is_valid():
@@ -533,6 +591,7 @@ def ticket_list(request):
         'filter_form': filter_form,
         'now': now
     })
+
 
 @login_required
 def category_list(request):
@@ -756,16 +815,16 @@ def my_refunds(request):
     return render(request, 'app/my_refunds.html', {'reembolsos': refunds})
 
 @login_required
-@transaction.atomic 
+@transaction.atomic
 def refund_request(request):
     if request.method == 'POST':
-        form = RefundRequestForm(request.POST, initial={'user': request.user}) 
+        form = RefundRequestForm(request.POST, initial={'user': request.user})
         if form.is_valid():
             try:
                 reembolso = form.save(commit=False)
                 reembolso.user = request.user
-                reembolso.approved = None 
-                reembolso.approval_date = None 
+                reembolso.approved = None
+                reembolso.approval_date = None
                 reembolso.save()
                 messages.success(request, "¡Solicitud de reembolso enviada con éxito! Será revisada por un organizador.")
                 return redirect('my_refunds')
@@ -778,18 +837,18 @@ def refund_request(request):
                 messages.error(request, f"Ocurrió un error inesperado al procesar tu solicitud: {str(e)}")
                 print(f"Error inesperado en refund_request (creación): {e}")
         else:
-            pass 
+            pass
     else:
-        form = RefundRequestForm(initial={'user': request.user}) 
+        form = RefundRequestForm(initial={'user': request.user})
 
     return render(request, 'app/refund_request.html', {'form': form})
 
 @login_required
-@transaction.atomic 
+@transaction.atomic
 def manage_refunds(request):
     if not request.user.is_organizer:
         messages.error(request, "Solo los organizadores pueden gestionar reembolsos.")
-        return redirect('my_refunds') 
+        return redirect('my_refunds')
 
     if request.method == "POST":
         refund_id = request.POST.get("refund_id")
@@ -814,28 +873,28 @@ def manage_refunds(request):
             try:
                 with transaction.atomic():
                     if form.cleaned_data["approve"]:
-                        
+
                         refund_fee_percentage = calculate_refund_fee(ticket)
                         amount_to_refund = ticket.total * (1 - Decimal(str(refund_fee_percentage / 100)))
 
                         refund_processed_successfully = process_refund(ticket, amount_to_refund)
-                        
+
                         if refund_processed_successfully:
                             refund.approved = True
                             refund.approval_date = timezone.now()
                             refund.save()
 
-                            ticket.payment_confirmed = False 
+                            ticket.payment_confirmed = False
                             if ticket.type == Ticket.TicketType.GENERAL:
                                 ticket.event.general_tickets_available += ticket.quantity
                             else:
                                 ticket.event.vip_tickets_available += ticket.quantity
                             ticket.event.save()
-                            ticket.save() 
+                            ticket.save()
 
                             messages.success(request, f"¡Reembolso aprobado y procesado para ticket {ticket.ticket_code}! Se reembolsarán ${amount_to_refund:.2f}. Stock de tickets repuesto.")
                         else:
-                            refund.approved = False 
+                            refund.approved = False
                             refund.approval_date = timezone.now()
                             refund.save()
                             messages.error(request, f"Error al procesar el reembolso monetario para ticket {ticket.ticket_code}. La solicitud fue rechazada por fallo de pago. Contacta a soporte.")
@@ -845,7 +904,7 @@ def manage_refunds(request):
                         refund.approval_date = timezone.now()
                         refund.save()
                         messages.warning(request, f"Solicitud de reembolso para ticket {ticket.ticket_code} rechazada.")
-                    
+
                     return redirect('manage_refunds')
 
             except IntegrityError:
@@ -857,10 +916,10 @@ def manage_refunds(request):
             for field, errors in form.errors.items():
                 for error in errors:
                     messages.error(request, f"Error en el formulario de aprobación: {error}")
-            return redirect('manage_refunds') 
+            return redirect('manage_refunds')
 
     refunds = RefundRequest.objects.all().order_by("-created_at")
-    forms_dict = {r.id: RefundApprovalForm(instance=r) for r in refunds}
+    forms_dict = {r.pk: RefundApprovalForm(instance=r) for r in refunds}
     return render(request, 'app/manage_refund.html', {
         'refunds': refunds,
         'forms_dict': forms_dict
@@ -872,14 +931,14 @@ def refund_detail(request, id):
 
     if refund.user != request.user and not request.user.is_organizer:
         messages.error(request, "No tienes permiso para ver los detalles de esta solicitud de reembolso.")
-        return redirect('my_refunds') 
+        return redirect('my_refunds')
 
     ticket = None
     event = None
     try:
         ticket = Ticket.objects.get(ticket_code=refund.ticket_code)
         event = ticket.event
-        
+
         if request.user.is_organizer and event.organizer != request.user:
             messages.error(request, "No tienes permiso para ver los detalles de reembolsos de eventos que no organizas.")
             return redirect('manage_refunds')
