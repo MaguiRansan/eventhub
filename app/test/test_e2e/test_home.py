@@ -13,16 +13,16 @@ class HomePageDisplayTest(BaseE2ETest):
         """Test que verifica que la home carga correctamente"""
         self.page.goto(f"{self.live_server_url}/")
 
-        # Verificar que el logo este presente
+        
         logo = self.page.get_by_text("EventHub", exact=True)
         expect(logo).to_be_visible()
         expect(logo).to_have_attribute("href", "/")
 
-        # Verificar textos principales de la página
-        expect(self.page.get_by_text("Eventos y Entradas")).to_be_visible()
+        expect(self.page.get_by_text("Bienvenidos a EventHub")).to_be_visible()
         expect(
             self.page.get_by_text(
-                "Descubre, organiza y participa en los mejores eventos. Compra entradas, deja comentarios y califica tus experiencias."
+                "Descubrí los mejores eventos cerca tuyo"
+
             )
         ).to_be_visible()
 
