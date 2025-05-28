@@ -422,9 +422,7 @@ def ticket_update(request, ticket_id):
                     type_changed = original_type != new_type
                     quantity_diff = new_quantity - original_quantity
 
-                   
                     if quantity_diff > 0:  
-                       
                         total_otros_tickets = Ticket.objects.filter(
                             user=request.user,
                             event=ticket.event
@@ -449,7 +447,6 @@ def ticket_update(request, ticket_id):
                                 messages.error(request, f"No hay suficientes entradas {new_type.lower()} disponibles")
                                 return redirect('ticket_update', ticket_id=ticket_id)
 
-                   
                     price = ticket.event.general_price if new_type == Ticket.TicketType.GENERAL else ticket.event.vip_price
 
                     updated_ticket.subtotal = price * Decimal(new_quantity)
@@ -458,19 +455,15 @@ def ticket_update(request, ticket_id):
 
                     
                     if type_changed:
-                      
                         if original_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available += original_quantity
                         else:
                             ticket.event.vip_tickets_available += original_quantity
-
-                       
                         if new_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available -= new_quantity
                         else:
                             ticket.event.vip_tickets_available -= new_quantity
                     else:
-                      
                         if new_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available -= quantity_diff
                         else:
@@ -489,7 +482,6 @@ def ticket_update(request, ticket_id):
     else:
         form = TicketForm(instance=ticket, event=ticket.event)
 
- 
     total_ya_compradas = Ticket.objects.filter(
         user=request.user,
         event=ticket.event
@@ -567,8 +559,6 @@ from app.models import RefundRequest
 def ticket_list(request):
     now = timezone.now()
     tickets = Ticket.objects.filter(user=request.user).select_related('event').order_by('-buy_date')
-
-   
     refund_codes = RefundRequest.objects.exclude(approved=False).values_list('ticket_code', flat=True)
     tickets = tickets.exclude(ticket_code__in=refund_codes)
 
@@ -788,8 +778,10 @@ def event_form(request, id=None):
         'venues': venues,
         'categories': categories,
         'initial': initial,
-        'min_date': timezone.now().date() + datetime.timedelta(days=1)
+        'min_date': timezone.now().date() + datetime.timedelta(days=1),
+        'user_is_organizer': request.user.is_organizer  # ← ESTA LÍNEA ES CLAVE
     })
+
 
 @login_required
 def rating_create(request, id):

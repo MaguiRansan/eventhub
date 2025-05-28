@@ -150,8 +150,8 @@ class Event(models.Model):
         return True, event
 
     def update(self, title=None, description=None, scheduled_at=None, organizer=None,
-               general_price=None, vip_price=None, general_tickets=None, vip_tickets=None,
-               venue=None, categories=None):
+        general_price=None, vip_price=None, general_tickets=None, vip_tickets=None,
+        venue=None, categories=None):
         self.title = title or self.title
         self.description = description or self.description
         self.scheduled_at = scheduled_at or self.scheduled_at
@@ -208,6 +208,7 @@ class Ticket(models.Model):
 
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name="tickets")
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name="tickets")
+
 
     def __str__(self):
         type_map = {'GENERAL': 'General', 'VIP': 'VIP'}
@@ -316,10 +317,6 @@ def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
     ticket.full_clean()
     ticket.save()
     return ticket
-
-
-
-
 
 class PaymentInfo(models.Model):
     CARD_TYPE_CHOICES = [

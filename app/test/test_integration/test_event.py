@@ -2,6 +2,7 @@ import datetime
 from decimal import Decimal
 from django.test import Client, TestCase
 from django.urls import reverse
+from decimal import Decimal
 from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from app.models import Event, User, Category, Venue
@@ -76,7 +77,6 @@ class BaseEventTestCase(TestCase):
 
         self.client = Client()
 
-
 class EventsListViewTest(BaseEventTestCase):
     """Tests para la vista de listado de eventos"""
 
@@ -92,7 +92,6 @@ class EventsListViewTest(BaseEventTestCase):
         self.assertContains(response, "Concierto de Rock")
         self.assertContains(response, "Exposición de Arte")
 
-     
         events = list(response.context["events"])
         self.assertEqual(events[0].id, self.event1.pk)
         self.assertEqual(events[1].id, self.event2.pk)
@@ -101,7 +100,7 @@ class EventsListViewTest(BaseEventTestCase):
         """Test que verifica que la vista events funciona cuando el usuario es organizador"""
         self.client.login(username="organizador", password="password123")
         response = self.client.get(reverse("events"))
-        
+
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["user_is_organizer"])
         self.assertContains(response, "Crear Evento")
@@ -112,6 +111,31 @@ class EventsListViewTest(BaseEventTestCase):
         response = self.client.get(reverse("events"))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith("/accounts/login/"))
+        
+    def test_events_view_filtering(self):
+        """Test que verifica los filtros de la vista de eventos"""
+        self.client.login(username="regular", password="password123")
+        response = self.client.get(reverse("events") + "?categoria=" + str(self.category1.pk))
+        self.assertEqual(len(response.context["events"]), 1)
+        self.assertEqual(response.context["events"][0].id, self.event1.pk)
+        response = self.client.get(reverse("events") + "?venue=" + str(self.venue.pk))
+        self.assertEqual(len(response.context["events"]), 2)
+        past_event = Event.objects.create(
+            title="Evento Pasado",
+            description="Evento que ya ocurrió",
+            scheduled_at=timezone.now() - datetime.timedelta(days=1),
+            organizer=self.organizer,
+            venue=self.venue,
+            general_price=Decimal('75.00'),
+            vip_price=Decimal('150.00'),
+            general_tickets_total=100,
+            general_tickets_available=100,
+            vip_tickets_total=25,
+            vip_tickets_available=25,
+        )
+        response = self.client.get(reverse("events") + "?mostrar_pasados=true")
+        self.assertEqual(len(response.context["events"]), 1)
+        self.assertEqual(response.context["events"][0].id, past_event.pk)
 
     def test_events_view_filtering(self):
         """Test que verifica los filtros de la vista de eventos"""
@@ -191,7 +215,6 @@ class EventDetailViewTest(BaseEventTestCase):
         response = self.client.get(reverse("event_detail", args=[999]))
         self.assertEqual(response.status_code, 404)
 
-
 class EventFormViewTest(BaseEventTestCase):
     """Tests para la vista del formulario de eventos"""
 
@@ -233,6 +256,14 @@ class EventFormViewTest(BaseEventTestCase):
         response = self.client.get(reverse("event_form"))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith("/accounts/login/"))
+
+    def test_event_form_edit_existing(self):
+        self.client.login(username="organizador", password="password123")
+        response = self.client.get(reverse("event_edit", args=[self.event1.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "app/event_form.html")
+        self.assertEqual(response.context["event"].id, self.event1.id)
 
 
 class EventFormSubmissionTest(BaseEventTestCase):
