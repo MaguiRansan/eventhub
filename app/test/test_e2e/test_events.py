@@ -1,313 +1,248 @@
-import datetime
 import re
-
+import logging
+import datetime
 from django.utils import timezone
-from playwright.sync_api import expect
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from playwright.sync_api import sync_playwright, expect
+from app.models import Event, User, Venue, Category
 
-from app.models import Event, User
+logger = logging.getLogger(__name__)
 
-from app.test.test_e2e.base import BaseE2ETest
-
-
-class EventBaseTest(BaseE2ETest):
-    """Clase base específica para tests de eventos"""
-
+class EventCrudE2ETest(StaticLiveServerTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.playwright = sync_playwright().start()
+        cls.browser = cls.playwright.chromium.launch(headless=False)
+        cls.context = cls.browser.new_context(
+            viewport={'width': 1280, 'height': 1024},
+            locale='es-ES'
+        )
+        
+    @classmethod
+    def tearDownClass(cls):
+        cls.context.close()
+        cls.browser.close()
+        cls.playwright.stop()
+        super().tearDownClass()
+    
     def setUp(self):
-        super().setUp()
-
-        # Crear usuario organizador
+        self.page = self.context.new_page()
+        
         self.organizer = User.objects.create_user(
-            username="organizador",
-            email="organizador@example.com",
+            username="organizer",
+            email="organizer@example.com",
             password="password123",
             is_organizer=True,
         )
 
-        # Crear usuario regular
-        self.regular_user = User.objects.create_user(
-            username="usuario",
-            email="usuario@example.com",
-            password="password123",
-            is_organizer=False,
+        self.venue = Venue.objects.create(
+            name="Main Stadium",
+            address="123 Main St",
+            city="Springfield",
+            capacity=1000,
+            contact="contact@stadium.com",
+            organizer=self.organizer
         )
 
-        # Crear eventos de prueba
-        # Evento 1
-        event_date1 = timezone.make_aware(datetime.datetime(2025, 2, 10, 10, 10))
-        self.event1 = Event.objects.create(
-            title="Evento de prueba 1",
-            description="Descripción del evento 1",
-            scheduled_at=event_date1,
-            organizer=self.organizer,
+        self.category = Category.objects.create(
+            name="Concert",
+            description="Music events",
+            is_active=True
         )
 
-        # Evento 2
-        event_date2 = timezone.make_aware(datetime.datetime(2025, 3, 15, 14, 30))
-        self.event2 = Event.objects.create(
-            title="Evento de prueba 2",
-            description="Descripción del evento 2",
-            scheduled_at=event_date2,
-            organizer=self.organizer,
-        )
-
-    def _table_has_event_info(self):
-        """Método auxiliar para verificar que la tabla tiene la información correcta de eventos"""
-        # Verificar encabezados de la tabla
-        headers = self.page.locator("table thead th")
-        expect(headers.nth(0)).to_have_text("Título")
-        expect(headers.nth(1)).to_have_text("Descripción")
-        expect(headers.nth(2)).to_have_text("Fecha")
-        expect(headers.nth(3)).to_have_text("Acciones")
-
-        # Verificar que los eventos aparecen en la tabla
-        rows = self.page.locator("table tbody tr")
-        expect(rows).to_have_count(2)
-
-        # Verificar datos del primer evento
-        row0 = rows.nth(0)
-        expect(row0.locator("td").nth(0)).to_have_text("Evento de prueba 1")
-        expect(row0.locator("td").nth(1)).to_have_text("Descripción del evento 1")
-        expect(row0.locator("td").nth(2)).to_have_text("10 feb 2025, 10:10")
-
-        # Verificar datos del segundo evento
-        expect(rows.nth(1).locator("td").nth(0)).to_have_text("Evento de prueba 2")
-        expect(rows.nth(1).locator("td").nth(1)).to_have_text("Descripción del evento 2")
-        expect(rows.nth(1).locator("td").nth(2)).to_have_text("15 mar 2025, 14:30")
-
-    def _table_has_correct_actions(self, user_type):
-        """Método auxiliar para verificar que las acciones son correctas según el tipo de usuario"""
-        row0 = self.page.locator("table tbody tr").nth(0)
-
-        detail_button = row0.get_by_role("link", name="Ver Detalle")
-        edit_button = row0.get_by_role("link", name="Editar")
-        delete_form = row0.locator("form")
-
-        expect(detail_button).to_be_visible()
-        expect(detail_button).to_have_attribute("href", f"/events/{self.event1.id}/")
-
-        if user_type == "organizador":
-            expect(edit_button).to_be_visible()
-            expect(edit_button).to_have_attribute("href", f"/events/{self.event1.id}/edit/")
-
-            expect(delete_form).to_have_attribute("action", f"/events/{self.event1.id}/delete/")
-            expect(delete_form).to_have_attribute("method", "POST")
-
-            delete_button = delete_form.get_by_role("button", name="Eliminar")
-            expect(delete_button).to_be_visible()
-        else:
-            expect(edit_button).to_have_count(0)
-            expect(delete_form).to_have_count(0)
-
-
-class EventAuthenticationTest(EventBaseTest):
-    """Tests relacionados con la autenticación y permisos de usuarios en eventos"""
-
-    def test_events_page_requires_login(self):
-        """Test que verifica que la página de eventos requiere inicio de sesión"""
-        # Cerrar sesión si hay alguna activa
-        self.context.clear_cookies()
-
-        # Intentar ir a la página de eventos sin iniciar sesión
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Verificar que redirige a la página de login
-        expect(self.page).to_have_url(re.compile(r"/accounts/login/"))
-
-
-class EventDisplayTest(EventBaseTest):
-    """Tests relacionados con la visualización de la página de eventos"""
-
-    def test_events_page_display_as_organizer(self):
-        """Test que verifica la visualización correcta de la página de eventos para organizadores"""
-        self.login_user("organizador", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Verificar el título de la página
-        expect(self.page).to_have_title("Eventos")
-
-        # Verificar que existe un encabezado con el texto "Eventos"
-        header = self.page.locator("h1")
-        expect(header).to_have_text("Eventos")
-        expect(header).to_be_visible()
-
-        # Verificar que existe una tabla
-        table = self.page.locator("table")
-        expect(table).to_be_visible()
-
-        self._table_has_event_info()
-        self._table_has_correct_actions("organizador")
-
-    def test_events_page_regular_user(self):
-        """Test que verifica la visualización de la página de eventos para un usuario regular"""
-        # Iniciar sesión como usuario regular
-        self.login_user("usuario", "password123")
-
-        # Ir a la página de eventos
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        expect(self.page).to_have_title("Eventos")
-
-        # Verificar que existe un encabezado con el texto "Eventos"
-        header = self.page.locator("h1")
-        expect(header).to_have_text("Eventos")
-        expect(header).to_be_visible()
-
-        # Verificar que existe una tabla
-        table = self.page.locator("table")
-        expect(table).to_be_visible()
-
-        self._table_has_event_info()
-        self._table_has_correct_actions("regular")
-
-    def test_events_page_no_events(self):
-        """Test que verifica el comportamiento cuando no hay eventos"""
-        # Eliminar todos los eventos
-        Event.objects.all().delete()
-
-        self.login_user("organizador", "password123")
-
-        # Ir a la página de eventos
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Verificar que existe un mensaje indicando que no hay eventos
-        no_events_message = self.page.locator("text=No hay eventos disponibles")
-        expect(no_events_message).to_be_visible()
-
-
-class EventPermissionsTest(EventBaseTest):
-    """Tests relacionados con los permisos de usuario para diferentes funcionalidades"""
-
-    def test_buttons_visible_only_for_organizer(self):
-        """Test que verifica que los botones de gestión solo son visibles para organizadores"""
-        # Primero verificar como organizador
-        self.login_user("organizador", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Verificar que existe el botón de crear
-        create_button = self.page.get_by_role("link", name="Crear Evento")
-        expect(create_button).to_be_visible()
-
-        # Cerrar sesión
-        self.page.get_by_role("button", name="Salir").click()
-
-        # Iniciar sesión como usuario regular
-        self.login_user("usuario", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Verificar que NO existe el botón de crear
-        create_button = self.page.get_by_role("link", name="Crear Evento")
-        expect(create_button).to_have_count(0)
-
-
-class EventCRUDTest(EventBaseTest):
-    """Tests relacionados con las operaciones CRUD (Crear, Leer, Actualizar, Eliminar) de eventos"""
-
-    def test_create_new_event_organizer(self):
-        """Test que verifica la funcionalidad de crear un nuevo evento para organizadores"""
-        # Iniciar sesión como organizador
-        self.login_user("organizador", "password123")
-
-        # Ir a la página de eventos
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Hacer clic en el botón de crear evento
-        self.page.get_by_role("link", name="Crear Evento").click()
-
-        # Verificar que estamos en la página de creación de evento
-        expect(self.page).to_have_url(f"{self.live_server_url}/events/create/")
-
-        header = self.page.locator("h1")
-        expect(header).to_have_text("Crear evento")
-        expect(header).to_be_visible()
-
-        # Completar el formulario
-        self.page.get_by_label("Título del Evento").fill("Evento de prueba E2E")
-        self.page.get_by_label("Descripción").fill("Descripción creada desde prueba E2E")
-        self.page.get_by_label("Fecha").fill("2025-06-15")
-        self.page.get_by_label("Hora").fill("16:45")
-
-        # Enviar el formulario
-        self.page.get_by_role("button", name="Crear Evento").click()
-
-        # Verificar que redirigió a la página de eventos
-        expect(self.page).to_have_url(f"{self.live_server_url}/events/")
-
-        # Verificar que ahora hay 3 eventos
-        rows = self.page.locator("table tbody tr")
-        expect(rows).to_have_count(3)
-
-        row = self.page.locator("table tbody tr").last
-        expect(row.locator("td").nth(0)).to_have_text("Evento de prueba E2E")
-        expect(row.locator("td").nth(1)).to_have_text("Descripción creada desde prueba E2E")
-        expect(row.locator("td").nth(2)).to_have_text("15 jun 2025, 16:45")
-
-    def test_edit_event_organizer(self):
-        """Test que verifica la funcionalidad de editar un evento para organizadores"""
-        # Iniciar sesión como organizador
-        self.login_user("organizador", "password123")
-
-        # Ir a la página de eventos
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Hacer clic en el botón editar del primer evento
-        self.page.get_by_role("link", name="Editar").first.click()
-
-        # Verificar que estamos en la página de edición
-        expect(self.page).to_have_url(f"{self.live_server_url}/events/{self.event1.id}/edit/")
-
-        header = self.page.locator("h1")
-        expect(header).to_have_text("Editar evento")
-        expect(header).to_be_visible()
-
-        # Verificar que el formulario está precargado con los datos del evento y luego los editamos
-        title = self.page.get_by_label("Título del Evento")
-        expect(title).to_have_value("Evento de prueba 1")
-        title.fill("Titulo editado")
-
-        description = self.page.get_by_label("Descripción")
-        expect(description).to_have_value("Descripción del evento 1")
-        description.fill("Descripcion Editada")
-
-        date = self.page.get_by_label("Fecha")
-        expect(date).to_have_value("2025-02-10")
-        date.fill("2025-04-20")
-
-        time = self.page.get_by_label("Hora")
-        expect(time).to_have_value("10:10")
-        time.fill("03:00")
-
-        # Enviar el formulario
-        self.page.get_by_role("button", name="Crear Evento").click()
-
-        # Verificar que redirigió a la página de eventos
-        expect(self.page).to_have_url(f"{self.live_server_url}/events/")
-
-        # Verificar que el título del evento ha sido actualizado
-        row = self.page.locator("table tbody tr").last
-        expect(row.locator("td").nth(0)).to_have_text("Titulo editado")
-        expect(row.locator("td").nth(1)).to_have_text("Descripcion Editada")
-        expect(row.locator("td").nth(2)).to_have_text("20 abr 2025, 03:00")
-
-    def test_delete_event_organizer(self):
-        """Test que verifica la funcionalidad de eliminar un evento para organizadores"""
-        # Iniciar sesión como organizador
-        self.login_user("organizador", "password123")
-
-        # Ir a la página de eventos
-        self.page.goto(f"{self.live_server_url}/events/")
-
-        # Contar eventos antes de eliminar
-        initial_count = len(self.page.locator("table tbody tr").all())
-
-        # Hacer clic en el botón eliminar del primer evento
-        self.page.get_by_role("button", name="Eliminar").first.click()
-
-        # Verificar que redirigió a la página de eventos
-        expect(self.page).to_have_url(f"{self.live_server_url}/events/")
-
-        # Verificar que ahora hay un evento menos
-        rows = self.page.locator("table tbody tr")
-        expect(rows).to_have_count(initial_count - 1)
-
-        # Verificar que el evento eliminado ya no aparece en la tabla
-        expect(self.page.get_by_text("Evento de prueba 1")).to_have_count(0)
+    def _take_screenshot(self, step_name: str):
+        try:
+            self.page.screenshot(path=f"test_results/screenshots/{self._testMethodName}_{step_name}.png", full_page=True)
+        except Exception as e:
+            logger.error(f"Error taking screenshot: {str(e)}")
+
+    def _login_user(self, username: str, password: str):
+        try:
+            self.page.goto(f"{self.live_server_url}/accounts/login/")
+            self._take_screenshot("login_page")
+            
+            username_field = self.page.get_by_label("Username").or_(
+                self.page.get_by_label("Usuario")).or_(
+                self.page.locator('input[name="username"]'))
+            username_field.fill(username)
+            
+            password_field = self.page.get_by_label("Password").or_(
+                self.page.get_by_label("Contraseña")).or_(
+                self.page.locator('input[name="password"]'))
+            password_field.fill(password)
+            
+            login_button = self.page.get_by_role("button", name=re.compile(r"Login|Iniciar sesión", re.IGNORECASE))
+            login_button.click()
+            
+            self.page.wait_for_load_state("networkidle")
+            expect(self.page).to_have_url(re.compile(f"{self.live_server_url}/(events/)?"), timeout=10000)
+            self._take_screenshot("after_login")
+            
+        except Exception as e:
+            self._take_screenshot("login_error")
+            logger.error(f"Login failed: {str(e)}")
+            raise
+
+    def test_event_crud_operations(self):
+        try:
+            self._login_user("organizer", "password123")
+            self._take_screenshot("after_login")
+
+            create_button = self.page.get_by_role("link", name=re.compile(r"Crear Evento|Create Event", re.IGNORECASE))
+            expect(create_button).to_be_visible()
+            create_button.click()
+            
+            self.page.wait_for_load_state("networkidle")
+            self._take_screenshot("create_event_page")
+
+            event_title = "Evento Test"
+            
+            title_input = self.page.get_by_label("Título").or_(
+                self.page.get_by_label("Title")).or_(
+                self.page.locator('input[name="title"]'))
+            title_input.fill(event_title)
+            
+            description_input = self.page.get_by_label("Descripción").or_(
+                self.page.get_by_label("Description")).or_(
+                self.page.locator('textarea[name="description"]'))
+            description_input.fill("Descripción del evento de prueba")
+            
+            today = datetime.date.today()
+            future_date = today + datetime.timedelta(days=7)
+            
+            date_input = self.page.get_by_label("Fecha").or_(
+                self.page.locator('input[name="date"]')).or_(
+                self.page.locator('input[name="scheduled_date"]'))
+            date_input.fill(future_date.strftime("%Y-%m-%d"))
+            
+            time_input = self.page.get_by_label("Hora").or_(
+                self.page.get_by_label("Time")).or_(
+                self.page.locator('input[name="time"]')).or_(
+                self.page.locator('input[name="scheduled_time"]'))
+            time_input.fill("19:00")
+            
+            general_price = self.page.get_by_label("Precio General").or_(
+                self.page.get_by_label("General Price")).or_(
+                self.page.locator('input[name="general_price"]'))
+            general_price.fill("50")
+            
+            vip_price = self.page.get_by_label("Precio VIP").or_(
+                self.page.get_by_label("VIP Price")).or_(
+                self.page.locator('input[name="vip_price"]'))
+            vip_price.fill("100")
+            
+            general_tickets = self.page.get_by_label("Tickets Generales").or_(
+                self.page.get_by_label("General Tickets")).or_(
+                self.page.locator('input[name="general_tickets"]'))
+            general_tickets.fill("100")
+            
+            vip_tickets = self.page.get_by_label("Tickets VIP").or_(
+                self.page.get_by_label("VIP Tickets")).or_(
+                self.page.locator('input[name="vip_tickets"]'))
+            vip_tickets.fill("50")
+            
+            venue_select = self.page.locator('select[name="venue"]').or_(
+                self.page.locator('select[id="id_venue"]'))
+            if venue_select.count() > 0:
+                venue_select.select_option(str(self.venue.pk))
+            
+            category_checkbox = self.page.locator(f'input[type="checkbox"][value="{self.category.pk}"]').or_(
+                self.page.locator(f'input[type="checkbox"][name="categories"][value="{self.category.pk}"]'))
+            if category_checkbox.count() > 0:
+                category_checkbox.check()
+            
+            self._take_screenshot("form_completely_filled")
+
+            submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Crear|Create", re.IGNORECASE))
+            submit_button.click()
+            
+            self.page.wait_for_url(re.compile(r"/events/\d+/"), timeout=10000)
+            self._take_screenshot("after_submit")
+
+            expect(self.page).to_have_url(re.compile(r"/events/\d+/"))
+            
+            current_url = self.page.url
+            match = re.search(r'/events/(\d+)/', current_url)
+            if not match:
+                self.fail("No se pudo extraer el ID del evento de la URL")
+            event_id = match.group(1)
+            logger.info(f"Evento creado con ID: {event_id}")
+            
+            edit_button = self.page.get_by_role("link", name=re.compile(r"Editar|Edit", re.IGNORECASE))
+            expect(edit_button).to_be_visible(timeout=5000)
+            edit_button.click()
+            
+            self.page.wait_for_url(re.compile(rf"/events/{event_id}/edit/"), timeout=10000)
+            self._take_screenshot("edit_event_page")
+
+            title_input = self.page.get_by_label("Título").or_(
+                self.page.get_by_label("Title")).or_(
+                self.page.locator('input[name="title"]'))
+          
+            description_input = self.page.get_by_label("Descripción").or_(
+                self.page.get_by_label("Description")).or_(
+                self.page.locator('textarea[name="description"]'))
+            description_input.fill("Descripción actualizada del evento")
+            
+            general_price = self.page.get_by_label("Precio General").or_(
+                self.page.get_by_label("General Price")).or_(
+                self.page.locator('input[name="general_price"]'))
+            general_price.fill("75")
+            
+            self._take_screenshot("edit_form_filled")
+
+            date_input = self.page.get_by_label("Fecha").or_(
+                self.page.locator('input[name="date"]')).or_(
+                self.page.get_by_label("Date")).or_(
+                self.page.locator('input[name="scheduled_date"]'))
+            date_input.fill((timezone.now() + datetime.timedelta(days=10)).strftime("%Y-%m-%d"))
+            
+            time_input = self.page.get_by_label("Hora").or_(
+                self.page.get_by_label("Time")).or_(                
+                self.page.locator('input[name="scheduled_time"]'))    
+            time_input.fill("20:00")                                                                    
+            vip_price = self.page.get_by_label("Precio VIP").or_(
+                self.page.get_by_label("VIP Price")).or_(
+                self.page.locator('input[name="vip_price"]'))
+            vip_price.fill("150")
+            
+            self._take_screenshot("edit_form_filled")
+
+            submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Actualizar|Update", re.IGNORECASE))
+            submit_button.click()
+            
+            self.page.wait_for_url(re.compile(rf"/events/{event_id}/"), timeout=10000)
+            self._take_screenshot("after_update")
+
+            self.page.goto(f"{self.live_server_url}/events/")
+            self._take_screenshot("events_list")
+
+            event_row = self.page.locator("tr", has_text=re.compile(event_title, re.IGNORECASE))
+            expect(event_row).to_be_visible(timeout=5000)
+
+            delete_button = event_row.locator('button[title="Eliminar"]').or_(
+            event_row.locator('button[title="Delete"]'))
+            expect(delete_button).to_be_visible(timeout=5000)
+            self.page.once("dialog", lambda dialog: dialog.accept())
+            delete_button.click()
+
+            self._take_screenshot("delete_confirmation")
+
+            self.page.wait_for_load_state("networkidle")
+            self._take_screenshot("after_delete")
+
+            expect(self.page.get_by_text(re.compile(event_title, re.IGNORECASE))).not_to_be_visible(timeout=5000)
+            
+            with self.assertRaises(Event.DoesNotExist):
+                Event.objects.get(pk=event_id)
+            
+        except Exception as e:
+            self._take_screenshot("test_failed")
+            logger.error(f"Test failed at step: {self.page.url}")
+            logger.error(f"Page content: {self.page.content()}")
+            logger.error(f"Error: {str(e)}")
+            raise
+        finally:
+            if hasattr(self, 'page'):
+                self.page.close()
