@@ -90,20 +90,15 @@ class TicketE2ETest(StaticLiveServerTestCase):
             self._login_user("usuario_e2e", "clave123")
             self._take_screenshot("after_login")
 
-            # Go to event detail page
             event_url = reverse("event_detail", args=[self.event.pk])
             self.page.goto(f"{self.live_server_url}{event_url}")
             self._take_screenshot("event_detail_page")
 
-            # Check that the event shows as sold out
-            # The page shows "Evento agotado" as the main heading
             expect(self.page.get_by_text("Evento agotado")).to_be_visible()
             
-            # Also verify that tickets show as unavailable
-            expect(self.page.get_by_text("Disponibles: 0 de 10")).to_be_visible()  # General tickets
-            expect(self.page.get_by_text("Disponibles: 0 de 5")).to_be_visible()   # VIP tickets
+            expect(self.page.get_by_text("Disponibles: 0 de 10")).to_be_visible()  
+            expect(self.page.get_by_text("Disponibles: 0 de 5")).to_be_visible()   
             
-            # Verify that there's no buy button visible since tickets are sold out
             buy_button = self.page.get_by_role("button", name=re.compile(r"Comprar|Buy", re.IGNORECASE))
             expect(buy_button).not_to_be_visible()
             
