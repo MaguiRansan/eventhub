@@ -56,7 +56,7 @@ class TicketBaseTest(BaseE2ETest):
     def _navigate_to_buy_page(self):
         """Navega a la página de compra de tickets"""
         try:
-            self.page.goto(f"{self.live_server_url}/events/{self.event.id}/")
+            self.page.goto(f"{self.live_server_url}/events/{self.event.pk}/")
             self.page.wait_for_load_state("networkidle")
 
             buy_selectors = [
@@ -150,7 +150,7 @@ class TicketBaseTest(BaseE2ETest):
             import time
 
             for i in range(allowed_tickets):
-                ticket_code = f"SIM-{self.user.id}-{self.event.id}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+                ticket_code = f"SIM-{self.user.pk}-{self.event.pk}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
 
                 try:
                     ticket = Ticket.objects.create(
@@ -296,10 +296,10 @@ class TicketManagementTest(TicketBaseTest):
             self.login_user("organizador", "password123")
 
             possible_urls = [
-                f"/organizer/tickets/{self.event.id}/",
-                f"/organizer/events/{self.event.id}/tickets/",
-                f"/events/{self.event.id}/tickets/",
-                f"/admin/tickets/?event={self.event.id}",
+                f"/organizer/tickets/{self.event.pk}/",
+                f"/organizer/events/{self.event.pk}/tickets/",
+                f"/events/{self.event.pk}/tickets/",
+                f"/admin/tickets/?event={self.event.pk}",
             ]
 
             ticket_found = False
@@ -363,7 +363,7 @@ class TicketManagementTest(TicketBaseTest):
                 "/tickets/",
                 "/my-tickets/",
                 "/user/tickets/",
-                f"/events/{self.event.id}/my-tickets/",
+                f"/events/{self.event.pk}/my-tickets/",
                 "/profile/tickets/"
             ]
 

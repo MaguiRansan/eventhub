@@ -86,6 +86,10 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
+    
+    @property
+    def is_past(self):
+        return self.scheduled_at < timezone.now()
 
     @property
     def formatted_date(self):
@@ -292,7 +296,7 @@ def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
 
     refund_codes = RefundRequest.objects.filter(
         user=user,
-        approved=True  # Sólo aprobados para descontar
+        approved=True  
     ).values_list('ticket_code', flat=True)
 
     cantidad_reembolsada = cls.objects.filter(
