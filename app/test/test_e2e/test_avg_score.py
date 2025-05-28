@@ -83,6 +83,18 @@ class EventRatingE2ETest(BaseE2ETest):
             payment_confirmed=True,
             ticket_code='XYZ789UVW'
         )
+    
+    # Función auxiliar para tomar capturas de pantalla 
+    def _take_screenshot(self, step_name: str):
+        screenshots_dir = "test_results/screenshots"
+        os.makedirs(screenshots_dir, exist_ok=True)
+        screenshot_path = os.path.join(screenshots_dir, f"{self.__class__.__name__}_{self._testMethodName}_{step_name}.png")
+        try:
+            self.page.screenshot(path=screenshot_path, full_page=True)
+            logger.info(f"Captura de pantalla tomada: {screenshot_path}")
+        except Exception as e:
+            logger.error(f"Error al tomar la captura de pantalla '{step_name}': {str(e)}")
+   
 
     def _login_user_e2e(self, username, password):
         # Realizar el login con el cliente de Django para obtener la sesión
@@ -117,7 +129,6 @@ class EventRatingE2ETest(BaseE2ETest):
         # Limpiar las cookies de sesión en Playwright para simular el logout en el navegador
         self.page.context.clear_cookies()
         
-        # Opcional: Navegar a una página pública para confirmar el estado de no-logueado
         self.page.goto(self.live_server_url)
         self.page.wait_for_load_state('networkidle')
         # Verificar que el botón de login/registro vuelve a ser visible
@@ -132,32 +143,33 @@ class EventRatingE2ETest(BaseE2ETest):
         event_url = f"{self.live_server_url}/events/{self.event_past.id}/"
         try:
             self._login_user_e2e(self.regular_user.username, "password123")
+            self._take_screenshot("after_regular_user_login") 
             self.page.goto(event_url) 
             self.page.wait_for_load_state('networkidle')
+            self._take_screenshot("event_page_regular_user") 
 
-            # Verificar que el formulario de calificación está visible para el usuario regular
             expect(self.page.get_by_text("Dejar una reseña")).to_be_visible()
 
-            # 2. Rellenar y enviar la primera calificación (4 estrellas)
             self.page.locator('#title').fill("Gran Evento")
             self.page.locator('#score').select_option("4") 
             self.page.locator('#comment').fill("Me gustó mucho la organización y el ambiente.")
             self.page.get_by_role("button", name="Enviar calificación").click()
 
-            # Esperar a que la página se recargue o se redirija (después del POST)
             self.page.wait_for_url(event_url)
+            self._take_screenshot("after_first_rating_submission") 
 
             # Verificar el mensaje de éxito
             expect(self.page.get_by_text("¡Tu calificación ha sido guardada con éxito!")).to_be_visible()
 
-            # 3. Logout del primer usuario y Login como el segundo usuario
             self._logout_user_e2e() 
+            self._take_screenshot("after_first_logout") 
             
             self._login_user_e2e(self.another_user.username, "password123")
+            self._take_screenshot("after_second_user_login") 
             self.page.goto(event_url) 
             self.page.wait_for_load_state('networkidle')
+            self._take_screenshot("event_page_second_user") 
 
-            # 4. Rellenar y enviar la segunda calificación (5 estrellas)
             expect(self.page.get_by_text("Dejar una reseña")).to_be_visible()
             self.page.locator('#title').fill("Simplemente Genial")
             self.page.locator('#score').select_option("5") 
@@ -166,35 +178,42 @@ class EventRatingE2ETest(BaseE2ETest):
 
             # Esperar a que la página se recargue
             self.page.wait_for_url(event_url)
+            self._take_screenshot("after_second_rating_submission")
 
             # Verificar el mensaje de éxito
             expect(self.page.get_by_text("¡Tu calificación ha sido guardada con éxito!")).to_be_visible()
 
-            # 5. Logout del segundo usuario y Login como el ORGANIZADOR para verificar el promedio
             self._logout_user_e2e() 
+            self._take_screenshot("after_second_logout") 
             
             self._login_user_e2e(self.organizer_user.username, "password123")
+            self._take_screenshot("after_organizer_login") 
             self.page.goto(event_url) 
             self.page.wait_for_load_state('networkidle')
+            self._take_screenshot("event_page_organizer") 
 
             time.sleep(1) 
-     
+            
+          
             average_score_text_locator = self.page.locator('.card-body h5.card-title span.badge.bg-success.ms-2.fs-6')
             
-            expect(average_score_text_locator).to_have_text("4,5", timeout=5000)
+            # Buscamos el texto "4,5" como valor esperado
+            expect(average_score_text_locator).to_have_text("4,5", timeout=5000) 
 
+            # Verificamos el conteo de calificaciones
             expect(self.page.get_by_text("(2 calificaciones)")).to_be_visible(timeout=5000)
 
+            # Verificar las estrellas visuales para un promedio de 4.5
             average_stars_container = self.page.locator('.card-body h5.card-title .d-inline-block.align-middle.ms-2')
             
             expect(average_stars_container.locator('.bi-star-fill')).to_have_count(4)
             expect(average_stars_container.locator('.bi-star-half')).to_have_count(1)
             expect(average_stars_container.locator('.bi-star')).to_have_count(0)
             
-            # Opcional: Verificar que las calificaciones individuales también se muestran
             expect(self.page.get_by_text("Gran Evento")).to_be_visible()
             expect(self.page.get_by_text("Simplemente Genial")).to_be_visible()
 
+            self._take_screenshot("all_assertions_passed") 
 
         except Exception as e:
             screenshots_dir = "test_failures_screenshots"
