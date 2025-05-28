@@ -286,8 +286,6 @@ class Ticket(models.Model):
         return ticket
 
 
-
-
 class PaymentInfo(models.Model):
     CARD_TYPE_CHOICES = [
         ('VISA', 'Visa'),
@@ -335,8 +333,8 @@ class RefundRequest(models.Model):
     ticket_code = models.CharField(max_length=100)
     reason = models.CharField(max_length=20, choices=REASON_CHOICES)
     details= models.TextField(blank=True)
-    approved = models.BooleanField(null=True, default=None)
-    approval_date = models.DateTimeField(null=True, blank=True)
+    approved = models.BooleanField(null=True, blank=True, default=None)
+    approval_date = models.DateTimeField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property
@@ -344,3 +342,7 @@ class RefundRequest(models.Model):
         from .models import Ticket
         ticket = Ticket.objects.get(ticket_code=self.ticket_code)
         return ticket.event
+    
+    @property
+    def is_pending(self):
+        return self.approved is None
