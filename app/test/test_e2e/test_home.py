@@ -1,7 +1,5 @@
 import re
-
 from playwright.sync_api import expect
-
 from app.test.test_e2e.base import BaseE2ETest
 
 
@@ -14,10 +12,12 @@ class HomePageDisplayTest(BaseE2ETest):
         logo = self.page.get_by_text("EventHub", exact=True)
         expect(logo).to_be_visible()
         expect(logo).to_have_attribute("href", "/")
+
         expect(self.page.get_by_text("Bienvenidos a EventHub")).to_be_visible()
         expect(
             self.page.get_by_text(
                 "Descubrí los mejores eventos cerca tuyo"
+
             )
         ).to_be_visible()
 

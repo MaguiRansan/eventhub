@@ -53,10 +53,12 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
 
     def _take_screenshot(self, step_name: str):
         try:
+
             self.page.screenshot(
             path=f"test_results/screenshots/{self._testMethodName}{step_name}.png", 
             full_page=True
         )
+
         except Exception as e:
             logger.error(f"Error taking screenshot: {str(e)}")
 
@@ -182,6 +184,7 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
             title_input = self.page.get_by_label("Título").or_(
                 self.page.get_by_label("Title")).or_(
                 self.page.locator('input[name="title"]'))
+
             description_input = self.page.get_by_label("Descripción").or_(
                 self.page.get_by_label("Description")).or_(
                 self.page.locator('textarea[name="description"]'))
