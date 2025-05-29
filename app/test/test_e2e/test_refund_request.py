@@ -109,7 +109,7 @@ class RefundRequestE2ETest(StaticLiveServerTestCase):
 
             self._login_user()
             self._take_screenshot("after_login")
-            
+
             self.page.goto(f"{self.live_server_url}/refund_request/") 
             self.page.wait_for_load_state("domcontentloaded")
             self._take_screenshot("refund_page_loaded")
@@ -121,13 +121,13 @@ class RefundRequestE2ETest(StaticLiveServerTestCase):
             ticket_code_input.wait_for(state="visible", timeout=15000)
             expect(ticket_code_input).to_be_visible()
             ticket_code_input.fill('TEST123')
-            
+      
             reason_select = self.page.locator('select[name="reason"]').or_(
                 self.page.get_by_label("Motivo")).or_(
                 self.page.get_by_label("Reason"))
             reason_select.wait_for(state="visible", timeout=10000)
             reason_select.select_option(label='Problemas de salud')
-
+            
             policy_checkbox = self.page.locator('input[name="accept_policy"]').or_(
                 self.page.get_by_label("Acepto la política")).or_(
                 self.page.get_by_label("I accept the policy"))
@@ -135,22 +135,22 @@ class RefundRequestE2ETest(StaticLiveServerTestCase):
             policy_checkbox.check()
             
             self._take_screenshot("form_filled")
-            
+
             submit_button = self.page.get_by_role("button", name=re.compile(r"Enviar|Submit", re.IGNORECASE))
             submit_button.click()
             
             self.page.wait_for_load_state("networkidle")
             self._take_screenshot("after_submission")
-
+            
             current_url = self.page.url
             if "/my_refunds/" in current_url:
-
+      
                 expect(self.page.get_by_text("TEST123")).to_be_visible(timeout=5000)
                 expect(self.page.get_by_text("Salud")).to_be_visible(timeout=5000)
                 expect(self.page.get_by_text("Pendiente")).to_be_visible(timeout=5000)
                 logger.info("Refund request successfully created and visible in table")
             else:
-
+  
                 success_indicators = [
                     "Solicitud enviada",
                     "Solicitud creada",
@@ -179,10 +179,11 @@ class RefundRequestE2ETest(StaticLiveServerTestCase):
             assert refund_request is not None, "Refund request was not created in database"
             assert refund_request.reason == 'Salud', f"Expected reason 'Salud', got '{refund_request.reason}'"
             logger.info(f"Database verification passed: RefundRequest ID {refund_request.pk} created")
+            
   
             self.page.goto(f"{self.live_server_url}/refund_request/")
             self.page.wait_for_load_state("domcontentloaded")
-            
+    
             try:
                 ticket_input = self.page.locator('input[name="ticket_code"]')
                 if ticket_input.is_visible():
@@ -191,7 +192,7 @@ class RefundRequestE2ETest(StaticLiveServerTestCase):
                     submit_btn = self.page.get_by_role("button", name=re.compile(r"Enviar|Submit", re.IGNORECASE))
                     submit_btn.click()
                     self.page.wait_for_load_state("networkidle")
-      
+                    
                     duplicate_messages = [
                         "ya tiene una solicitud",
                         "already exists",
@@ -221,7 +222,7 @@ class RefundRequestE2ETest(StaticLiveServerTestCase):
             self._take_screenshot("test_failed")
             logger.error(f"Test failed at step: {self.page.url}")
             logger.error(f"Page title: {self.page.title()}")
- 
+     
             try:
                 inputs = self.page.locator('input').all()
                 selects = self.page.locator('select').all()
