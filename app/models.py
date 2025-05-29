@@ -13,8 +13,11 @@ import qrcode
 import base64
 from io import BytesIO
 from .fields import EncryptedCharField
+from django.db.models import Avg, DecimalField
 from django.contrib import messages
 from django.shortcuts import redirect
+from django.db import transaction
+
 
 
 class User(AbstractUser):
@@ -85,6 +88,10 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
+    
+    @property
+    def is_past(self):
+        return self.scheduled_at < timezone.now()
 
     @property
     def formatted_date(self):
@@ -145,8 +152,8 @@ class Event(models.Model):
         return True, event
 
     def update(self, title=None, description=None, scheduled_at=None, organizer=None,
-               general_price=None, vip_price=None, general_tickets=None, vip_tickets=None,
-               venue=None, categories=None):
+        general_price=None, vip_price=None, general_tickets=None, vip_tickets=None,
+        venue=None, categories=None):
         self.title = title or self.title
         self.description = description or self.description
         self.scheduled_at = scheduled_at or self.scheduled_at
@@ -172,17 +179,30 @@ class Event(models.Model):
             self.categories.set(categories)
 
         return self
+    @property
+    def average_rating(self):
+        result = self.ratings.aggregate(avg_score=Avg('score', output_field=DecimalField()))
+        return result['avg_score']
+
+    @property
+    def total_ratings_count(self):
+        return self.ratings.count()
 
 class Rating(models.Model):
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name='ratings')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     title = models.CharField(max_length=100)
     comment = models.TextField(blank=True, null=True)
-    score = models.PositiveSmallIntegerField()
+    score = models.PositiveSmallIntegerField(
+        choices=[(i, str(i)) for i in range(1, 6)],
+        help_text="Puntuación del 1 al 5"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+
         unique_together = ('event', 'user')
+
     def __str__(self):
         return f"{self.user.username} - {self.score} estrellas"
 
@@ -203,6 +223,7 @@ class Ticket(models.Model):
 
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name="tickets")
     event = models.ForeignKey('Event', on_delete=models.CASCADE, related_name="tickets")
+
 
     def __str__(self):
         type_map = {'GENERAL': 'General', 'VIP': 'VIP'}
@@ -230,19 +251,32 @@ class Ticket(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+
         if not self.ticket_code:
             self.ticket_code = self._generate_ticket_code()
+
         self._calculate_pricing()
+
         if is_new:
-            available = self.event.get_available_tickets(self.type)
-            if available < self.quantity:
-                raise ValidationError(f"No hay suficientes entradas {self.type.lower()} disponibles")
-            if self.type == self.TicketType.GENERAL:
-                self.event.general_tickets_available -= self.quantity
-            else:
-                self.event.vip_tickets_available -= self.quantity
-            self.event.save()
-        super().save(*args, **kwargs)
+            with transaction.atomic():
+                event = Event.objects.select_for_update().get(pk=self.event.pk)
+
+                available = event.get_available_tickets(self.type)
+                if available < self.quantity:
+                    raise ValidationError(f"No hay suficientes entradas {self.type.lower()} disponibles")
+
+                if self.type == self.TicketType.GENERAL:
+                    event.general_tickets_available -= self.quantity
+                else:
+                    event.vip_tickets_available -= self.quantity
+
+                event.save()
+
+
+                self.event = event
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
     def _generate_ticket_code(self):
         return f"{self.event.title[:4].upper()}-{uuid.uuid4().hex[:8]}"
@@ -271,19 +305,34 @@ class Ticket(models.Model):
     def can_be_deleted_by(self, user):
         return self.can_be_modified_by(user)
 
-    @classmethod
-    def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
-        total_existentes = cls.objects.filter(user=user, event=event).aggregate(
-            total=models.Sum('quantity'))['total'] or 0
-        if total_existentes + quantity > 4:
-            raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+@classmethod
+def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
+    total_existentes = cls.objects.filter(user=user, event=event).aggregate(
+        total=models.Sum('quantity'))['total'] or 0
 
-        ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
-        if not ticket.ticket_code:
-            ticket.ticket_code = ticket._generate_ticket_code()
-        ticket.full_clean()
-        ticket.save()
-        return ticket
+    refund_codes = RefundRequest.objects.filter(
+        user=user,
+        approved=True  
+    ).values_list('ticket_code', flat=True)
+
+    cantidad_reembolsada = cls.objects.filter(
+        user=user,
+        event=event,
+        ticket_code__in=refund_codes
+    ).aggregate(total=models.Sum('quantity'))['total'] or 0
+
+
+    total_existentes -= cantidad_reembolsada
+
+    if total_existentes + quantity > 4:
+        raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+
+    ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
+    if not ticket.ticket_code:
+        ticket.ticket_code = ticket._generate_ticket_code()
+    ticket.full_clean()
+    ticket.save()
+    return ticket
 
 
 class PaymentInfo(models.Model):
@@ -337,12 +386,15 @@ class RefundRequest(models.Model):
     approval_date = models.DateTimeField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    @property
-    def event(self):
-        from .models import Ticket
+@property
+def event(self):
+    from .models import Ticket
+    try:
         ticket = Ticket.objects.get(ticket_code=self.ticket_code)
         return ticket.event
-    
-    @property
-    def is_pending(self):
-        return self.approved is None
+    except Ticket.DoesNotExist:
+        return None
+
+@property
+def is_pending(self):
+    return self.approved is None

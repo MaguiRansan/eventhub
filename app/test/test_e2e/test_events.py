@@ -6,7 +6,6 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from playwright.sync_api import sync_playwright, expect
 from app.models import Event, User, Venue, Category
 
-
 logger = logging.getLogger(__name__)
 
 class EventCrudE2ETest(StaticLiveServerTestCase):
@@ -29,6 +28,8 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
     
     def setUp(self):
         self.page = self.context.new_page()
+        
+        self.current_test_name = self._testMethodName
         
         self.organizer = User.objects.create_user(
             username="organizer",
@@ -54,17 +55,25 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
 
     def _take_screenshot(self, step_name: str):
         try:
-            self.page.screenshot(
-            path=f"test_results/screenshots/{self._testMethodName}{step_name}.png", 
-            full_page=True
-        )
+            import os
+            
+     
+            screenshot_dir = "test_results/screenshots"
+            os.makedirs(screenshot_dir, exist_ok=True)
+            
+    
+            screenshot_path = f"{screenshot_dir}/{self.current_test_name}_{step_name}.png"
+            
+            self.page.screenshot(path=screenshot_path, full_page=True)
+            logger.info(f"Screenshot saved: {screenshot_path}")
+            
         except Exception as e:
-            logger.error(f"Error taking screenshot: {str(e)}")
+            logger.error(f"Error taking screenshot for step '{step_name}': {str(e)}")
 
     def _login_user(self, username: str, password: str):
         try:
             self.page.goto(f"{self.live_server_url}/accounts/login/")
-            self._take_screenshot("login_page")
+            self._take_screenshot("01_login_page")
             
             username_field = self.page.get_by_label("Username").or_(
                 self.page.get_by_label("Usuario")).or_(
@@ -76,66 +85,70 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
                 self.page.locator('input[name="password"]'))
             password_field.fill(password)
             
+
             login_button = self.page.get_by_role("button", name=re.compile(r"Login|Iniciar sesión", re.IGNORECASE))
             login_button.click()
-            
+        
             self.page.wait_for_load_state("networkidle")
             expect(self.page).to_have_url(re.compile(f"{self.live_server_url}/(events/)?"), timeout=10000)
-            self._take_screenshot("after_login")
+            self._take_screenshot("02_after_login")
             
         except Exception as e:
-            self._take_screenshot("login_error")
+            self._take_screenshot("01_login_error")
             logger.error(f"Login failed: {str(e)}")
             raise
 
-    def test_event_crud_operations(self):
-        try:
-            self._login_user("organizer", "password123")
-            self._take_screenshot("after_login")
+    def _fill_event_form(self, event_title: str, update_mode: bool = False):
 
-            create_button = self.page.get_by_role("link", name=re.compile(r"Crear Evento|Create Event", re.IGNORECASE))
-            expect(create_button).to_be_visible()
-            create_button.click()
-            
-            self.page.wait_for_load_state("networkidle")
-            self._take_screenshot("create_event_page")
-
-            event_title = "Evento Test"
-            
-            title_input = self.page.get_by_label("Título").or_(
-                self.page.get_by_label("Title")).or_(
-                self.page.locator('input[name="title"]'))
+   
+        title_input = self.page.get_by_label("Título").or_(
+            self.page.get_by_label("Title")).or_(
+            self.page.locator('input[name="title"]'))
+        if not update_mode:
             title_input.fill(event_title)
+        
+        description_text = "Descripción actualizada del evento" if update_mode else "Descripción del evento de prueba"
+        description_input = self.page.get_by_label("Descripción").or_(
+            self.page.get_by_label("Description")).or_(
+            self.page.locator('textarea[name="description"]'))
+        description_input.fill(description_text)
+        
+        
+        if update_mode:
+            future_date = timezone.now() + datetime.timedelta(days=10)
+            time_value = "20:00"
+        else:
+            future_date = datetime.date.today() + datetime.timedelta(days=7)
+            time_value = "19:00"
             
-            description_input = self.page.get_by_label("Descripción").or_(
-                self.page.get_by_label("Description")).or_(
-                self.page.locator('textarea[name="description"]'))
-            description_input.fill("Descripción del evento de prueba")
-            
-            today = datetime.date.today()
-            future_date = today + datetime.timedelta(days=7)
-            
-            date_input = self.page.get_by_label("Fecha").or_(
-                self.page.locator('input[name="date"]')).or_(
-                self.page.locator('input[name="scheduled_date"]'))
-            date_input.fill(future_date.strftime("%Y-%m-%d"))
-            
-            time_input = self.page.get_by_label("Hora").or_(
-                self.page.get_by_label("Time")).or_(
-                self.page.locator('input[name="time"]')).or_(
-                self.page.locator('input[name="scheduled_time"]'))
-            time_input.fill("19:00")
-            
-            general_price = self.page.get_by_label("Precio General").or_(
-                self.page.get_by_label("General Price")).or_(
-                self.page.locator('input[name="general_price"]'))
-            general_price.fill("50")
-            
-            vip_price = self.page.get_by_label("Precio VIP").or_(
-                self.page.get_by_label("VIP Price")).or_(
-                self.page.locator('input[name="vip_price"]'))
-            vip_price.fill("100")
-            
+        date_input = self.page.get_by_label("Fecha").or_(
+            self.page.get_by_label("Date")).or_(
+            self.page.locator('input[name="date"]')).or_(
+            self.page.locator('input[name="scheduled_date"]'))
+        date_input.fill(future_date.strftime("%Y-%m-%d"))
+        
+        time_input = self.page.get_by_label("Hora").or_(
+            self.page.get_by_label("Time")).or_(
+            self.page.locator('input[name="time"]')).or_(
+            self.page.locator('input[name="scheduled_time"]'))
+        time_input.fill(time_value)
+        
+        
+        general_price_value = "75" if update_mode else "50"
+        vip_price_value = "150" if update_mode else "100"
+        
+        general_price = self.page.get_by_label("Precio General").or_(
+            self.page.get_by_label("General Price")).or_(
+            self.page.locator('input[name="general_price"]'))
+        general_price.fill(general_price_value)
+        
+        vip_price = self.page.get_by_label("Precio VIP").or_(
+            self.page.get_by_label("VIP Price")).or_(
+            self.page.locator('input[name="vip_price"]'))
+        vip_price.fill(vip_price_value)
+        
+        
+        if not update_mode:
             general_tickets = self.page.get_by_label("Tickets Generales").or_(
                 self.page.get_by_label("General Tickets")).or_(
                 self.page.locator('input[name="general_tickets"]'))
@@ -146,26 +159,46 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
                 self.page.locator('input[name="vip_tickets"]'))
             vip_tickets.fill("50")
             
+        
             venue_select = self.page.locator('select[name="venue"]').or_(
                 self.page.locator('select[id="id_venue"]'))
             if venue_select.count() > 0:
                 venue_select.select_option(str(self.venue.pk))
             
+           
             category_checkbox = self.page.locator(f'input[type="checkbox"][value="{self.category.pk}"]').or_(
                 self.page.locator(f'input[type="checkbox"][name="categories"][value="{self.category.pk}"]'))
             if category_checkbox.count() > 0:
                 category_checkbox.check()
+
+    def test_event_crud_operations(self):
+      
+        try:
             
-            self._take_screenshot("form_completely_filled")
+            self._login_user("organizer", "password123")
+
+         
+            create_button = self.page.get_by_role("link", name=re.compile(r"Crear Evento|Create Event", re.IGNORECASE))
+            expect(create_button).to_be_visible()
+            create_button.click()
+            
+            self.page.wait_for_load_state("networkidle")
+            self._take_screenshot("03_create_event_page")
+
+           
+            event_title = "Evento Test"
+            self._fill_event_form(event_title, update_mode=False)
+            self._take_screenshot("04_form_completely_filled")
 
             submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Crear|Create", re.IGNORECASE))
             submit_button.click()
             
+         
             self.page.wait_for_url(re.compile(r"/events/\d+/"), timeout=10000)
-            self._take_screenshot("after_submit")
+            self._take_screenshot("05_after_submit")
 
             expect(self.page).to_have_url(re.compile(r"/events/\d+/"))
-            
+      
             current_url = self.page.url
             match = re.search(r'/events/(\d+)/', current_url)
             if not match:
@@ -173,75 +206,55 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
             event_id = match.group(1)
             logger.info(f"Evento creado con ID: {event_id}")
             
+         
             edit_button = self.page.get_by_role("link", name=re.compile(r"Editar|Edit", re.IGNORECASE))
             expect(edit_button).to_be_visible(timeout=5000)
             edit_button.click()
             
             self.page.wait_for_url(re.compile(rf"/events/{event_id}/edit/"), timeout=10000)
-            self._take_screenshot("edit_event_page")
+            self._take_screenshot("06_edit_event_page")
 
-            title_input = self.page.get_by_label("Título").or_(
-                self.page.get_by_label("Title")).or_(
-                self.page.locator('input[name="title"]'))
-            description_input = self.page.get_by_label("Descripción").or_(
-                self.page.get_by_label("Description")).or_(
-                self.page.locator('textarea[name="description"]'))
-            description_input.fill("Descripción actualizada del evento")
-            
-            general_price = self.page.get_by_label("Precio General").or_(
-                self.page.get_by_label("General Price")).or_(
-                self.page.locator('input[name="general_price"]'))
-            general_price.fill("75")
-            
-            self._take_screenshot("edit_form_filled")
-
-            date_input = self.page.get_by_label("Fecha").or_(
-                self.page.locator('input[name="date"]')).or_(
-                self.page.get_by_label("Date")).or_(
-                self.page.locator('input[name="scheduled_date"]'))
-            date_input.fill((timezone.now() + datetime.timedelta(days=10)).strftime("%Y-%m-%d"))
-            
-            time_input = self.page.get_by_label("Hora").or_(
-                self.page.get_by_label("Time")).or_(                
-                self.page.locator('input[name="scheduled_time"]'))    
-            time_input.fill("20:00")                                                                    
-            vip_price = self.page.get_by_label("Precio VIP").or_(
-                self.page.get_by_label("VIP Price")).or_(
-                self.page.locator('input[name="vip_price"]'))
-            vip_price.fill("150")
-            
-            self._take_screenshot("edit_form_filled")
+       
+            self._fill_event_form(event_title, update_mode=True)
+            self._take_screenshot("07_edit_form_filled")
 
             submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Actualizar|Update", re.IGNORECASE))
             submit_button.click()
             
+        
             self.page.wait_for_url(re.compile(rf"/events/{event_id}/"), timeout=10000)
-            self._take_screenshot("after_update")
+            self._take_screenshot("08_after_update")
 
+         
             self.page.goto(f"{self.live_server_url}/events/")
-            self._take_screenshot("events_list")
+            self._take_screenshot("09_events_list")
 
             event_row = self.page.locator("tr", has_text=re.compile(event_title, re.IGNORECASE))
             expect(event_row).to_be_visible(timeout=5000)
 
+      
             delete_button = event_row.locator('button[title="Eliminar"]').or_(
-            event_row.locator('button[title="Delete"]'))
+                event_row.locator('button[title="Delete"]'))
             expect(delete_button).to_be_visible(timeout=5000)
+            
+    
             self.page.once("dialog", lambda dialog: dialog.accept())
             delete_button.click()
 
-            self._take_screenshot("delete_confirmation")
-
+            self._take_screenshot("10_delete_confirmation")
             self.page.wait_for_load_state("networkidle")
-            self._take_screenshot("after_delete")
+            self._take_screenshot("11_after_delete")
 
             expect(self.page.get_by_text(re.compile(event_title, re.IGNORECASE))).not_to_be_visible(timeout=5000)
             
+        
             with self.assertRaises(Event.DoesNotExist):
                 Event.objects.get(pk=event_id)
+                
+            logger.info("Test CRUD de eventos completado exitosamente")
             
         except Exception as e:
-            self._take_screenshot("test_failed")
+            self._take_screenshot("99_test_failed")
             logger.error(f"Test failed at step: {self.page.url}")
             logger.error(f"Page content: {self.page.content()}")
             logger.error(f"Error: {str(e)}")
@@ -249,3 +262,28 @@ class EventCrudE2ETest(StaticLiveServerTestCase):
         finally:
             if hasattr(self, 'page'):
                 self.page.close()
+
+def test_event_form_validation(self):
+    
+    try:
+        
+        self._login_user("organizer", "password123")
+        create_button = self.page.get_by_role("link", name=re.compile(r"Crear Evento|Create Event", re.IGNORECASE))
+        create_button.click()
+        self.page.wait_for_load_state("networkidle")
+        self._take_screenshot("01_formulario_vacio")
+        submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Crear|Create", re.IGNORECASE))
+        submit_button.click()
+
+        self._take_screenshot("02_errores_validacion")
+        expect(self.page).to_have_url(re.compile(r"./create."))
+
+        logger.info("Prueba de validación de formulario completada con éxito")
+
+    except Exception as e:
+        self._take_screenshot("99_error_prueba_validacion")
+        logger.error(f"Error en la prueba de validación: {str(e)}")
+        raise
+    finally:
+        if hasattr(self, 'page'):
+            self.page.close()

@@ -61,6 +61,7 @@ class EventModelTest(TestCase):
         self.assertEqual(event.vip_tickets_total, 100)
         self.assertEqual(event.vip_tickets_available, 100)
         self.assertIn(self.category, event.categories.all())
+        self.assertFalse(event.is_past)
         self.assertFalse(event.is_sold_out)
         self.assertIsNotNone(event.created_at)
         self.assertIsNotNone(event.updated_at)
@@ -258,6 +259,24 @@ class EventModelTest(TestCase):
         self.assertEqual(updated_event.vip_tickets_total, 30)
         self.assertEqual(updated_event.vip_tickets_available, 30)  
         self.assertEqual(updated_event.general_tickets_total, 100) 
+        
+    def test_event_is_past_property(self):
+        """Test para la propiedad is_past"""
+        past_event = Event.objects.create(
+            title="Evento pasado",
+            description="Descripción",
+            scheduled_at=self.past_date,
+            organizer=self.organizer
+        )
+        self.assertTrue(past_event.is_past)
+        
+        future_event = Event.objects.create(
+            title="Evento futuro",
+            description="Descripción",
+            scheduled_at=self.future_date,
+            organizer=self.organizer
+        )
+        self.assertFalse(future_event.is_past)
 
     def test_event_is_sold_out_property(self):
         """Test para la propiedad is_sold_out"""

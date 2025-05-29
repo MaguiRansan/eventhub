@@ -65,86 +65,102 @@ def home(request):
 
 @login_required
 def events(request):
-    events = Event.objects.all().order_by("scheduled_at")
 
     fecha = request.GET.get("fecha")
     categoria_id = request.GET.get("categoria")
     venue_id = request.GET.get("venue")
+    mostrar_pasados = request.GET.get("mostrar_pasados", "false") == "true"
+
+    events = Event.objects.all()
 
     if fecha:
         events = events.filter(scheduled_at__date=fecha)
+    elif mostrar_pasados:
+        events = events.filter(scheduled_at__lt=timezone.now())
+    else:
+        events = events.filter(scheduled_at__gte=timezone.now())
+
     if categoria_id:
         events = events.filter(categories__id=categoria_id)
     if venue_id:
         events = events.filter(venue_id=venue_id)
 
-    events = events.distinct()
-
-    categorias = Category.objects.all()
-    venues = Venue.objects.all()
-
+   
     return render(
         request,
         "app/events.html",
         {
             "events": events,
             "user_is_organizer": request.user.is_organizer,
-            "categorias": categorias,
-            "venues": venues,
+            "categorias": Category.objects.all(),
+            "venues": Venue.objects.all(),
         },
     )
 
 @login_required
 def event_detail(request, id):
-    event = get_object_or_404(Event, pk=id)
-    ratings = Rating.objects.filter(event=event)
+    event = get_object_or_404(Event.objects.prefetch_related('ratings'), pk=id)
+    
     user_is_organizer = event.organizer == request.user
     now = timezone.now()
     rating_to_edit = None
     rating_id = request.GET.get('rating_id') or request.POST.get('rating_id')
     event_has_started = event.scheduled_at <= now
 
-    has_ticket = Ticket.objects.filter(event=event, user=request.user).exists()  # 🔹 Agregado
+
+    has_ticket = Ticket.objects.filter(event=event, user=request.user, payment_confirmed=True).exists()
+
 
     if rating_id:
         rating_to_edit = get_object_or_404(Rating, pk=rating_id, event=event)
         if user_is_organizer or rating_to_edit.user != request.user:
-            return redirect('event_detail', id=id)
+            messages.error(request, "No tienes permiso para editar esta calificación.")
+            return redirect('event_detail', id=id) 
 
     if request.method == 'POST':
         if rating_to_edit:
-            form = RatingForm(request.POST, instance=rating_to_edit, user=request.user, event=event)
+            form = RatingForm(request.POST, instance=rating_to_edit)
         else:
             if user_is_organizer:
-                return redirect('event_detail', id=id)
-            form = RatingForm(request.POST, user=request.user, event=event)
+                messages.error(request, "Los organizadores no pueden dejar calificaciones.")
+                return redirect('event_detail', id=id) 
+            form = RatingForm(request.POST)
 
         if form.is_valid():
             if not event_has_started:
-                form.add_error(None, "Solo podés calificar eventos que ya ocurrieron.")  # 🔹 Validación
+
+                form.add_error(None, "Solo puedes calificar eventos que ya ocurrieron.")
             elif not has_ticket:
-                form.add_error(None, "Solo podés calificar si tenés una entrada para este evento.")  # 🔹 Validación
+                form.add_error(None, "Solo puedes calificar si tienes una entrada comprada para este evento.")
+
             else:
                 try:
                     new_rating = form.save(commit=False)
                     new_rating.event = event
                     new_rating.user = request.user
                     new_rating.save()
+                    messages.success(request, "¡Tu calificación ha sido guardada con éxito!")
                     return redirect('event_detail', id=id)
                 except IntegrityError:
-                    form.add_error(None, "Ya has calificado este evento.")
+                    messages.warning(request, "Ya has calificado este evento. Puedes editar tu calificación existente.")
+                except Exception as e:
+                    messages.error(request, f"Error al guardar la calificación: {e}")
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"Error en el campo '{field if field != '__all__' else 'general'}': {error}")
     else:
-        form = RatingForm(instance=rating_to_edit, user=request.user, event=event)
+        form = RatingForm(instance=rating_to_edit)
 
     context = {
         'event': event,
-        'ratings': ratings,
         'form': form,
         'rating_to_edit': rating_to_edit,
         'can_edit': user_is_organizer,
         'now': now,
         'event_has_started': event_has_started,
-        'has_ticket': has_ticket,  # 🔹 Para usarlo en el template si querés
+        'has_ticket': has_ticket,
+
     }
     return render(request, 'app/event_detail.html', context)
 
@@ -156,8 +172,8 @@ def rating_delete(request, id, rating_id):
     if request.user == rating.user or request.user.is_organizer:
         if request.method == "POST":
             rating.delete()
-            return redirect("event_detail", id=id)
-    return redirect("event_detail", id=id)
+            return redirect("event_detail", id=id) 
+    return redirect("event_detail", id=id) 
 
 @login_required
 def create_event(request):
@@ -182,7 +198,7 @@ def create_event(request):
 
             event.save()
             form.save_m2m()
-            return redirect('event_detail', event_id=event.id)
+            return redirect('event_detail', id=event.id) 
     else:
         form = EventForm()
 
@@ -192,7 +208,7 @@ def create_event(request):
     })
 
 @login_required
-def edit_event(request, event_id):
+def edit_event(request, event_id): 
     event = get_object_or_404(Event, id=event_id)
 
     if not request.user.is_organizer:
@@ -218,7 +234,7 @@ def edit_event(request, event_id):
 
             updated_event.save()
             form.save_m2m()
-            return redirect('event_detail', event_id=event.pk)
+            return redirect('event_detail', id=event.pk) 
     else:
         initial_data = {
             'title': event.title,
@@ -259,10 +275,10 @@ def event_delete(request, id):
         event.delete()
         return redirect("events")
 
-    return redirect("event_detail", id=id)
+    return redirect("event_detail", id=id) 
 
 @login_required
-def organizer_tickets(request, event_id=None):
+def organizer_tickets(request, event_id=None): 
     if not request.user.is_organizer:
         return redirect('events')
 
@@ -287,15 +303,29 @@ def organizer_tickets(request, event_id=None):
 
 @login_required
 @transaction.atomic
-def ticket_purchase(request, event_id):
-    event: Event = get_object_or_404(Event, pk=event_id)
+def ticket_purchase(request, event_id): 
+    event = get_object_or_404(Event, pk=event_id)
 
     if request.user.is_organizer:
+
+
         return redirect('event_detail', id=event.pk)
 
-    total_ya_compradas = Ticket.objects.filter(user=request.user, event=event).aggregate(
+
+    refund_codes = RefundRequest.objects.filter(
+        user=request.user,
+        approved__in=[True, None]
+    ).values_list('ticket_code', flat=True)
+
+
+    total_ya_compradas = Ticket.objects.filter(
+        user=request.user,
+        event=event
+    ).exclude(ticket_code__in=refund_codes).aggregate(
+
         total=Sum('quantity')
     )['total'] or 0
+
 
     if request.method == 'POST':
         ticket_form = TicketForm(request.POST, event=event)
@@ -314,6 +344,7 @@ def ticket_purchase(request, event_id):
                     ticket.event = event
                     ticket.ticket_code = ticket._generate_ticket_code()
 
+
                     price = event.general_price if ticket.type == Ticket.TicketType.GENERAL else event.vip_price
                     ticket.subtotal = price * Decimal(ticket.quantity)
                     ticket.taxes = ticket.subtotal * Decimal('0.10')
@@ -326,6 +357,8 @@ def ticket_purchase(request, event_id):
                         payment_info.save()
 
                     ticket.save()
+
+
 
                     if ticket.type == Ticket.TicketType.GENERAL:
                         event.general_tickets_available -= ticket.quantity
@@ -406,7 +439,9 @@ def ticket_update(request, ticket_id):
                     type_changed = original_type != new_type
                     quantity_diff = new_quantity - original_quantity
 
-                    if quantity_diff > 0:
+
+                    if quantity_diff > 0:  
+
                         total_otros_tickets = Ticket.objects.filter(
                             user=request.user,
                             event=ticket.event
@@ -436,12 +471,12 @@ def ticket_update(request, ticket_id):
                     updated_ticket.taxes = updated_ticket.subtotal * Decimal('0.10')
                     updated_ticket.total = updated_ticket.subtotal + updated_ticket.taxes
 
+
                     if type_changed:
                         if original_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available += original_quantity
                         else:
                             ticket.event.vip_tickets_available += original_quantity
-
                         if new_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available -= new_quantity
                         else:
@@ -475,7 +510,9 @@ def ticket_update(request, ticket_id):
         'ticket': ticket,
         'now': timezone.now(),
         'original_price': ticket.event.general_price if ticket.type == Ticket.TicketType.GENERAL else ticket.event.vip_price,
-        'total_ya_compradas': total_ya_compradas
+
+        'total_ya_compradas': total_ya_compradas  
+
     })
 
 @login_required
@@ -489,7 +526,7 @@ def ticket_delete(request, ticket_id):
 
     if request.user.is_organizer and request.user == ticket.event.organizer:
         redirect_url = 'organizer_tickets_event'
-        redirect_kwargs = {'event_id': ticket.event.id}
+        redirect_kwargs = {'event_id': ticket.event.pk}
     else:
         redirect_url = 'ticket_list'
         redirect_kwargs = {}
@@ -524,7 +561,7 @@ def ticket_use(request, ticket_id):
 
     if not request.user.is_organizer or ticket.event.organizer != request.user:
         messages.error(request, "No tienes permiso para marcar este ticket")
-        return redirect('event_detail', id=ticket.event.id)
+        return redirect('event_detail', id=ticket.event.pk)
 
     if request.method == 'POST':
         if ticket.is_used:
@@ -534,12 +571,17 @@ def ticket_use(request, ticket_id):
             ticket.save()
             messages.success(request, f"Ticket #{ticket.ticket_code} marcado como usado")
 
-    return redirect('event_detail', id=ticket.event.id)
+    return redirect('event_detail', id=ticket.event.pk)
+
+from app.models import RefundRequest  
 
 @login_required
 def ticket_list(request):
     now = timezone.now()
     tickets = Ticket.objects.filter(user=request.user).select_related('event').order_by('-buy_date')
+    refund_codes = RefundRequest.objects.exclude(approved=False).values_list('ticket_code', flat=True)
+    tickets = tickets.exclude(ticket_code__in=refund_codes)
+
     filter_form = TicketFilterForm(request.GET or None)
 
     if filter_form.is_valid():
@@ -559,6 +601,7 @@ def ticket_list(request):
         'filter_form': filter_form,
         'now': now
     })
+
 
 @login_required
 def category_list(request):
@@ -755,11 +798,13 @@ def event_form(request, id=None):
         'venues': venues,
         'categories': categories,
         'initial': initial,
-        'min_date': timezone.now().date() + datetime.timedelta(days=1)
+        'min_date': timezone.now().date() + datetime.timedelta(days=1),
+        'user_is_organizer': request.user.is_organizer  # ← ESTA LÍNEA ES CLAVE
     })
 
+
 @login_required
-def rating_create(request, id):
+def rating_create(request, id): 
     if request.user.is_organizer:
         messages.error(request, "Los organizadores no pueden dejar calificaciones.")
         return redirect("event_detail", id=id)
@@ -922,6 +967,7 @@ def manage_refunds(request):
             continue
 
     forms_dict = {r.id: RefundApprovalForm(instance=r) for r in refunds}
+
 
     return render(request, 'app/manage_refund.html', {
         'refunds': refunds,
