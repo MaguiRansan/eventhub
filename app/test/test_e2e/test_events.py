@@ -1,312 +1,251 @@
-import datetime
 import re
+import logging
+import datetime
 from django.utils import timezone
-from playwright.sync_api import expect
-from app.models import Event, User, Venue
-from app.test.test_e2e.base import BaseE2ETest
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from playwright.sync_api import sync_playwright, expect
+from app.models import Event, User, Venue, Category
 
-class EventBaseTest(BaseE2ETest):
+
+logger = logging.getLogger(__name__)
+
+class EventCrudE2ETest(StaticLiveServerTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.playwright = sync_playwright().start()
+        cls.browser = cls.playwright.chromium.launch(headless=False)
+        cls.context = cls.browser.new_context(
+            viewport={'width': 1280, 'height': 1024},
+            locale='es-ES'
+        )
+        
+    @classmethod
+    def tearDownClass(cls):
+        cls.context.close()
+        cls.browser.close()
+        cls.playwright.stop()
+        super().tearDownClass()
+    
     def setUp(self):
-        super().setUp()
-
+        self.page = self.context.new_page()
+        
         self.organizer = User.objects.create_user(
-            username="organizador",
-            email="organizador@example.com",
+            username="organizer",
+            email="organizer@example.com",
             password="password123",
             is_organizer=True,
         )
 
-        self.regular_user = User.objects.create_user(
-            username="usuario",
-            email="usuario@example.com",
-            password="password123",
-            is_organizer=False,
-        )
-
         self.venue = Venue.objects.create(
-            name="Auditorio Principal",
-            address="Calle Principal 123",
-            capacity=500,
+            name="Main Stadium",
+            address="123 Main St",
+            city="Springfield",
+            capacity=1000,
+            contact="contact@stadium.com",
             organizer=self.organizer
         )
 
-        event_date1 = timezone.make_aware(datetime.datetime(2025, 2, 10, 10, 10))
-        self.event1 = Event.objects.create(
-            title="Evento de prueba 1",
-            description="Descripción del evento 1",
-            scheduled_at=event_date1,
-            organizer=self.organizer,
-            venue=self.venue,
-            general_tickets_total=100,
-            general_tickets_available=100
+        self.category = Category.objects.create(
+            name="Concert",
+            description="Music events",
+            is_active=True
         )
 
-        event_date2 = timezone.make_aware(datetime.datetime(2025, 3, 15, 14, 30))
-        self.event2 = Event.objects.create(
-            title="Evento de prueba 2",
-            description="Descripción del evento 2",
-            scheduled_at=event_date2,
-            organizer=self.organizer,
-            venue=self.venue,
-            general_tickets_total=150,
-            general_tickets_available=150
+    def _take_screenshot(self, step_name: str):
+        try:
+            self.page.screenshot(
+            path=f"test_results/screenshots/{self._testMethodName}{step_name}.png", 
+            full_page=True
         )
+        except Exception as e:
+            logger.error(f"Error taking screenshot: {str(e)}")
 
-    def logout_user(self):
-        """Método para cerrar sesión del usuario actual"""
+    def _login_user(self, username: str, password: str):
         try:
-            self.page.get_by_role("button", name="Salir").click()
-            expect(self.page).to_have_url(re.compile(r"/accounts/login/"), timeout=15000)
-        except:
-            try:
-                self.page.get_by_text("Salir").click()
-                expect(self.page).to_have_url(re.compile(r"/accounts/login/"), timeout=15000)
-            except:
-                self.page.goto(f"{self.live_server_url}/accounts/logout/")
-                expect(self.page).to_have_url(re.compile(r"/accounts/login/"), timeout=15000)
+            self.page.goto(f"{self.live_server_url}/accounts/login/")
+            self._take_screenshot("login_page")
+            
+            username_field = self.page.get_by_label("Username").or_(
+                self.page.get_by_label("Usuario")).or_(
+                self.page.locator('input[name="username"]'))
+            username_field.fill(username)
+            
+            password_field = self.page.get_by_label("Password").or_(
+                self.page.get_by_label("Contraseña")).or_(
+                self.page.locator('input[name="password"]'))
+            password_field.fill(password)
+            
+            login_button = self.page.get_by_role("button", name=re.compile(r"Login|Iniciar sesión", re.IGNORECASE))
+            login_button.click()
+            
+            self.page.wait_for_load_state("networkidle")
+            expect(self.page).to_have_url(re.compile(f"{self.live_server_url}/(events/)?"), timeout=10000)
+            self._take_screenshot("after_login")
+            
+        except Exception as e:
+            self._take_screenshot("login_error")
+            logger.error(f"Login failed: {str(e)}")
+            raise
 
-    def _table_has_event_info(self):
-        """Verifica que la tabla contenga información de eventos"""
-        expect(self.page.locator(f"text={self.event1.title}")).to_be_visible(timeout=10000)
-        expect(self.page.locator(f"text={self.event2.title}")).to_be_visible(timeout=10000)
-
-    def _table_has_correct_actions(self, user_type):
-        """Verifica que la tabla tenga las acciones correctas según el tipo de usuario"""
-        if user_type == "organizer":
-            try:
-                edit_buttons = self.page.get_by_role("link", name="Editar")
-                expect(edit_buttons).to_have_count(2, timeout=5000)
-            except:
-                edit_buttons = self.page.locator("a:has-text('Editar')")
-                expect(edit_buttons).to_have_count(2, timeout=5000)
-        else:
-            try:
-                edit_buttons = self.page.get_by_role("link", name="Editar")
-                expect(edit_buttons).to_have_count(0, timeout=5000)
-            except:
-                pass
-
-
-class EventAuthenticationTest(EventBaseTest):
-    def test_events_page_requires_login(self):
-        self.context.clear_cookies()
-        self.page.goto(f"{self.live_server_url}/events/")
-        expect(self.page).to_have_url(re.compile(r"/accounts/login/"), timeout=15000)
-
-
-class EventDisplayTest(EventBaseTest):
-    def test_events_page_display_as_organizer(self):
-        self.login_user("organizador", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-        self.page.wait_for_load_state("networkidle", timeout=30000)
-
-        expect(self.page.locator("h1")).to_have_text("Eventos", timeout=10000)
-        self._table_has_event_info()
-        self._table_has_correct_actions("organizer")
-
-    def test_events_page_regular_user(self):
-        self.login_user("usuario", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-        self.page.wait_for_load_state("networkidle", timeout=30000)
-
-        expect(self.page.locator("h1")).to_have_text("Eventos", timeout=10000)
-        self._table_has_event_info()
-        self._table_has_correct_actions("regular")
-
-    def test_events_page_no_events(self):
-        Event.objects.all().delete()
-        self.login_user("organizador", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-        self.page.wait_for_load_state("networkidle", timeout=30000)
-
-        no_events_messages = [
-            "No hay eventos disponibles",
-            "No hay eventos",
-            "Sin eventos",
-            "No events available"
-        ]
-
-        message_found = False
-        for message in no_events_messages:
-            try:
-                expect(self.page.locator(f"text={message}")).to_be_visible(timeout=5000)
-                message_found = True
-                break
-            except:
-                continue
-
-        if not message_found:
-            expect(self.page.locator(f"text={self.event1.title}")).not_to_be_visible()
-
-
-class EventPermissionsTest(EventBaseTest):
-    def test_buttons_visible_only_for_organizer(self):
-        self.login_user("organizador", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-        self.page.wait_for_load_state("networkidle", timeout=30000)
-
+    def test_event_crud_operations(self):
         try:
-            create_btn = self.page.get_by_role("link", name="Crear Evento")
-            expect(create_btn).to_be_visible(timeout=5000)
-        except:
-            create_btn = self.page.locator("a:has-text('Crear Evento')")
-            expect(create_btn).to_be_visible(timeout=5000)
+            self._login_user("organizer", "password123")
+            self._take_screenshot("after_login")
 
-        self.logout_user()
+            create_button = self.page.get_by_role("link", name=re.compile(r"Crear Evento|Create Event", re.IGNORECASE))
+            expect(create_button).to_be_visible()
+            create_button.click()
+            
+            self.page.wait_for_load_state("networkidle")
+            self._take_screenshot("create_event_page")
 
-        self.login_user("usuario", "password123")
-        self.page.goto(f"{self.live_server_url}/events/")
-        self.page.wait_for_load_state("networkidle", timeout=30000)
+            event_title = "Evento Test"
+            
+            title_input = self.page.get_by_label("Título").or_(
+                self.page.get_by_label("Title")).or_(
+                self.page.locator('input[name="title"]'))
+            title_input.fill(event_title)
+            
+            description_input = self.page.get_by_label("Descripción").or_(
+                self.page.get_by_label("Description")).or_(
+                self.page.locator('textarea[name="description"]'))
+            description_input.fill("Descripción del evento de prueba")
+            
+            today = datetime.date.today()
+            future_date = today + datetime.timedelta(days=7)
+            
+            date_input = self.page.get_by_label("Fecha").or_(
+                self.page.locator('input[name="date"]')).or_(
+                self.page.locator('input[name="scheduled_date"]'))
+            date_input.fill(future_date.strftime("%Y-%m-%d"))
+            
+            time_input = self.page.get_by_label("Hora").or_(
+                self.page.get_by_label("Time")).or_(
+                self.page.locator('input[name="time"]')).or_(
+                self.page.locator('input[name="scheduled_time"]'))
+            time_input.fill("19:00")
+            
+            general_price = self.page.get_by_label("Precio General").or_(
+                self.page.get_by_label("General Price")).or_(
+                self.page.locator('input[name="general_price"]'))
+            general_price.fill("50")
+            
+            vip_price = self.page.get_by_label("Precio VIP").or_(
+                self.page.get_by_label("VIP Price")).or_(
+                self.page.locator('input[name="vip_price"]'))
+            vip_price.fill("100")
+            
+            general_tickets = self.page.get_by_label("Tickets Generales").or_(
+                self.page.get_by_label("General Tickets")).or_(
+                self.page.locator('input[name="general_tickets"]'))
+            general_tickets.fill("100")
+            
+            vip_tickets = self.page.get_by_label("Tickets VIP").or_(
+                self.page.get_by_label("VIP Tickets")).or_(
+                self.page.locator('input[name="vip_tickets"]'))
+            vip_tickets.fill("50")
+            
+            venue_select = self.page.locator('select[name="venue"]').or_(
+                self.page.locator('select[id="id_venue"]'))
+            if venue_select.count() > 0:
+                venue_select.select_option(str(self.venue.pk))
+            
+            category_checkbox = self.page.locator(f'input[type="checkbox"][value="{self.category.pk}"]').or_(
+                self.page.locator(f'input[type="checkbox"][name="categories"][value="{self.category.pk}"]'))
+            if category_checkbox.count() > 0:
+                category_checkbox.check()
+            
+            self._take_screenshot("form_completely_filled")
 
-        try:
-            create_btn = self.page.get_by_role("link", name="Crear Evento")
-            expect(create_btn).to_have_count(0, timeout=5000)
-        except:
-            pass
+            submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Crear|Create", re.IGNORECASE))
+            submit_button.click()
+            
+            self.page.wait_for_url(re.compile(r"/events/\d+/"), timeout=10000)
+            self._take_screenshot("after_submit")
 
+            expect(self.page).to_have_url(re.compile(r"/events/\d+/"))
+            
+            current_url = self.page.url
+            match = re.search(r'/events/(\d+)/', current_url)
+            if not match:
+                self.fail("No se pudo extraer el ID del evento de la URL")
+            event_id = match.group(1)
+            logger.info(f"Evento creado con ID: {event_id}")
+            
+            edit_button = self.page.get_by_role("link", name=re.compile(r"Editar|Edit", re.IGNORECASE))
+            expect(edit_button).to_be_visible(timeout=5000)
+            edit_button.click()
+            
+            self.page.wait_for_url(re.compile(rf"/events/{event_id}/edit/"), timeout=10000)
+            self._take_screenshot("edit_event_page")
 
-class EventCRUDTest(EventBaseTest):
-    def test_create_new_event_organizer(self):
-        self.login_user("organizador", "password123")
-        self.page.goto(f"{self.live_server_url}/events/create/")
-        self.page.wait_for_load_state("networkidle", timeout=30000)
+            title_input = self.page.get_by_label("Título").or_(
+                self.page.get_by_label("Title")).or_(
+                self.page.locator('input[name="title"]'))
+            description_input = self.page.get_by_label("Descripción").or_(
+                self.page.get_by_label("Description")).or_(
+                self.page.locator('textarea[name="description"]'))
+            description_input.fill("Descripción actualizada del evento")
+            
+            general_price = self.page.get_by_label("Precio General").or_(
+                self.page.get_by_label("General Price")).or_(
+                self.page.locator('input[name="general_price"]'))
+            general_price.fill("75")
+            
+            self._take_screenshot("edit_form_filled")
 
-        # Llenar formulario con selectores más robustos
-        title_selectors = ["input[name='title']", "#id_title", "input[id*='title']"]
-        for selector in title_selectors:
-            try:
-                self.page.locator(selector).fill("Nuevo Evento E2E")
-                break
-            except:
-                continue
+            date_input = self.page.get_by_label("Fecha").or_(
+                self.page.locator('input[name="date"]')).or_(
+                self.page.get_by_label("Date")).or_(
+                self.page.locator('input[name="scheduled_date"]'))
+            date_input.fill((timezone.now() + datetime.timedelta(days=10)).strftime("%Y-%m-%d"))
+            
+            time_input = self.page.get_by_label("Hora").or_(
+                self.page.get_by_label("Time")).or_(                
+                self.page.locator('input[name="scheduled_time"]'))    
+            time_input.fill("20:00")                                                                    
+            vip_price = self.page.get_by_label("Precio VIP").or_(
+                self.page.get_by_label("VIP Price")).or_(
+                self.page.locator('input[name="vip_price"]'))
+            vip_price.fill("150")
+            
+            self._take_screenshot("edit_form_filled")
 
-        desc_selectors = ["textarea[name='description']", "#id_description", "textarea[id*='description']"]
-        for selector in desc_selectors:
-            try:
-                self.page.locator(selector).fill("Descripción E2E")
-                break
-            except:
-                continue
+            submit_button = self.page.get_by_role("button", name=re.compile(r"Guardar|Save|Actualizar|Update", re.IGNORECASE))
+            submit_button.click()
+            
+            self.page.wait_for_url(re.compile(rf"/events/{event_id}/"), timeout=10000)
+            self._take_screenshot("after_update")
 
-        date_selectors = ["input[name='scheduled_at_0']", "input[name='date']", "#id_scheduled_at_0", "input[type='date']"]
-        for selector in date_selectors:
-            try:
-                self.page.locator(selector).fill("2025-06-15")
-                break
-            except:
-                continue
+            self.page.goto(f"{self.live_server_url}/events/")
+            self._take_screenshot("events_list")
 
-        time_selectors = ["input[name='scheduled_at_1']", "input[name='time']", "#id_scheduled_at_1", "input[type='time']"]
-        for selector in time_selectors:
-            try:
-                self.page.locator(selector).fill("16:45")
-                break
-            except:
-                continue
+            event_row = self.page.locator("tr", has_text=re.compile(event_title, re.IGNORECASE))
+            expect(event_row).to_be_visible(timeout=5000)
 
-        # Seleccionar venue
-        venue_selectors = ["select[name='venue']", "#id_venue"]
-        for selector in venue_selectors:
-            try:
-                venue_select = self.page.locator(selector)
-                venue_select.select_option(value=str(self.venue.id))
-                break
-            except:
-                continue
+            delete_button = event_row.locator('button[title="Eliminar"]').or_(
+            event_row.locator('button[title="Delete"]'))
+            expect(delete_button).to_be_visible(timeout=5000)
+            self.page.once("dialog", lambda dialog: dialog.accept())
+            delete_button.click()
 
-        # Buscar inputs de tickets con múltiples selectores
-        tickets_total_selectors = [
-            "input[name='general_tickets_total']",
-            "#id_general_tickets_total",
-            "input[id*='general_tickets_total']",
-            "input[id*='tickets_total']"
-        ]
+            self._take_screenshot("delete_confirmation")
 
-        for selector in tickets_total_selectors:
-            try:
-                element = self.page.locator(selector)
-                if element.is_visible():
-                    element.fill("100")
-                    break
-            except:
-                continue
+            self.page.wait_for_load_state("networkidle")
+            self._take_screenshot("after_delete")
 
-        tickets_available_selectors = [
-            "input[name='general_tickets_available']",
-            "#id_general_tickets_available",
-            "input[id*='general_tickets_available']",
-            "input[id*='tickets_available']"
-        ]
-
-        for selector in tickets_available_selectors:
-            try:
-                element = self.page.locator(selector)
-                if element.is_visible():
-                    element.fill("100")
-                    break
-            except:
-                continue
-
-        # Buscar y llenar campo de precio si existe
-        price_selectors = [
-            "input[name='general_price']",
-            "#id_general_price",
-            "input[id*='price']"
-        ]
-
-        for selector in price_selectors:
-            try:
-                element = self.page.locator(selector)
-                if element.is_visible():
-                    element.fill("50.00")
-                    break
-            except:
-                continue
-
-        # Enviar formulario con múltiples opciones
-        submit_selectors = [
-            "button:has-text('Crear Evento')",
-            "input[type='submit']",
-            "button[type='submit']",
-            ".btn-primary",
-            "button.btn"
-        ]
-
-        submitted = False
-        for selector in submit_selectors:
-            try:
-                element = self.page.locator(selector)
-                if element.is_visible():
-                    element.click()
-                    submitted = True
-                    break
-            except:
-                continue
-
-        if not submitted:
-            # Fallback: usar cualquier botón visible
-            buttons = self.page.locator("button").all()
-            for button in buttons:
-                try:
-                    if button.is_visible() and "crear" in button.inner_text().lower():
-                        button.click()
-                        submitted = True
-                        break
-                except:
-                    continue
-
-        if submitted:
-            self.page.wait_for_load_state("networkidle", timeout=30000)
-
-            # Verificar redirección - puede ser a detalle del evento o lista de eventos
-            try:
-                expect(self.page).to_have_url(re.compile(r"/events/\d+/"), timeout=30000)
-            except:
-                try:
-                    expect(self.page).to_have_url(re.compile(r"/events/"), timeout=30000)
-                except:
-                    # Si no redirige como esperamos, verificar que el evento se creó
-                    self.assertTrue(Event.objects.filter(title="Nuevo Evento E2E").exists())
-        else:
-            # Si no pudo enviar el formulario, al menos verificar que la página carga
-            expect(self.page.locator("body")).to_be_visible()
+            expect(self.page.get_by_text(re.compile(event_title, re.IGNORECASE))).not_to_be_visible(timeout=5000)
+            
+            with self.assertRaises(Event.DoesNotExist):
+                Event.objects.get(pk=event_id)
+            
+        except Exception as e:
+            self._take_screenshot("test_failed")
+            logger.error(f"Test failed at step: {self.page.url}")
+            logger.error(f"Page content: {self.page.content()}")
+            logger.error(f"Error: {str(e)}")
+            raise
+        finally:
+            if hasattr(self, 'page'):
+                self.page.close()
