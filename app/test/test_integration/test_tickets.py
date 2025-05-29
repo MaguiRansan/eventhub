@@ -46,7 +46,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         self.url = reverse("ticket_purchase", kwargs={"event_id": self.event.id})
 
     def test_puede_comprar_si_no_excede_limite(self):
-        """Compra válida: el usuario tiene 2 entradas y pide 2 más"""
+ 
         self.client.login(username="comprador", password="12345")
 
 
@@ -79,7 +79,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         self.assertEqual(total_tickets, 4)
 
     def test_no_puede_comprar_si_excede_4(self):
-        """Compra inválida: ya tiene 4 entradas, intenta comprar 1 más"""
+        
         self.client.login(username="comprador", password="12345")
 
 
@@ -119,7 +119,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         self.assertEqual(total_tickets, 4)
 
     def test_vip_ticket_limit_validation(self):
-        """Los tickets VIP tienen un límite de 2 por compra"""
+       
         self.client.login(username="comprador", password="12345")
 
 
@@ -143,7 +143,7 @@ class TicketPurchaseIntegrationTest(TestCase):
         ).count(), 0)
 
     def test_successful_purchase_redirect(self):
-        """Test que verifica la redirección después de una compra exitosa"""
+   
         self.client.login(username="comprador", password="12345")
 
         response = self.client.post(self.url, {
@@ -161,7 +161,6 @@ class TicketPurchaseIntegrationTest(TestCase):
         self.assertTrue(response.url.startswith(reverse("ticket_detail", args=[1])))
 
     def test_purchase_without_login(self):
-        """Test que verifica que se redirige al login si el usuario no está autenticado"""
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith("/accounts/login/"))

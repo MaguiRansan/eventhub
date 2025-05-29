@@ -13,6 +13,7 @@ from io import BytesIO
 import qrcode.constants
 from django.db import transaction
 from django.db import IntegrityError
+from django.db.models import Q
 
 from .models import Event, Ticket, User, PaymentInfo, Rating, Category, Venue, RefundRequest
 from .forms import EventForm, TicketForm, PaymentForm, TicketFilterForm, RatingForm, CategoryForm, VenueForm, RefundRequestForm, RefundApprovalForm
@@ -307,6 +308,7 @@ def ticket_purchase(request, event_id):
 
     if request.user.is_organizer:
 
+
         return redirect('event_detail', id=event.pk)
 
 
@@ -320,6 +322,7 @@ def ticket_purchase(request, event_id):
         user=request.user,
         event=event
     ).exclude(ticket_code__in=refund_codes).aggregate(
+
         total=Sum('quantity')
     )['total'] or 0
 
@@ -348,14 +351,13 @@ def ticket_purchase(request, event_id):
                     ticket.total = ticket.subtotal + ticket.taxes
                     ticket.payment_confirmed = True
 
-
                     payment_info = payment_form.save(commit=False)
                     payment_info.user = request.user
                     if payment_form.cleaned_data.get('save_card'):
                         payment_info.save()
 
-
                     ticket.save()
+
 
 
                     if ticket.type == Ticket.TicketType.GENERAL:
@@ -437,7 +439,9 @@ def ticket_update(request, ticket_id):
                     type_changed = original_type != new_type
                     quantity_diff = new_quantity - original_quantity
 
+
                     if quantity_diff > 0:  
+
                         total_otros_tickets = Ticket.objects.filter(
                             user=request.user,
                             event=ticket.event
@@ -449,7 +453,6 @@ def ticket_update(request, ticket_id):
                             messages.error(request, "No podés tener más de 4 entradas para este evento.")
                             return redirect('ticket_update', ticket_id=ticket_id)
 
-                    
                     if type_changed or quantity_diff > 0:
                         if type_changed:
                             available = ticket.event.get_available_tickets(new_type)
@@ -468,7 +471,7 @@ def ticket_update(request, ticket_id):
                     updated_ticket.taxes = updated_ticket.subtotal * Decimal('0.10')
                     updated_ticket.total = updated_ticket.subtotal + updated_ticket.taxes
 
-                    
+
                     if type_changed:
                         if original_type == Ticket.TicketType.GENERAL:
                             ticket.event.general_tickets_available += original_quantity
@@ -507,7 +510,9 @@ def ticket_update(request, ticket_id):
         'ticket': ticket,
         'now': timezone.now(),
         'original_price': ticket.event.general_price if ticket.type == Ticket.TicketType.GENERAL else ticket.event.vip_price,
+
         'total_ya_compradas': total_ya_compradas  
+
     })
 
 @login_required
@@ -825,14 +830,34 @@ def my_refunds(request):
 @transaction.atomic
 def refund_request(request):
     if request.method == 'POST':
-        form = RefundRequestForm(request.POST, initial={'user': request.user})
+        form = RefundRequestForm(request.POST, user=request.user)
         if form.is_valid():
+            ticket_code = form.cleaned_data.get('ticket_code')
+
+            existing_pending = RefundRequest.objects.filter(
+                user=request.user,
+                approved__isnull=True
+            ).exists()
+
+            if existing_pending:
+                messages.error(request, "Ya tienes solicitudes de reembolso pendientes. Debes esperar a que sean procesadas antes de crear una nueva.")
+                return redirect('my_refunds')
+
+            existing_refund = RefundRequest.objects.filter(
+                ticket_code=ticket_code
+            ).exists()
+            if existing_refund:
+                messages.error(request, "Ya existe una solicitud de reembolso para este ticket.")
+                return redirect('my_refunds')
+
             try:
                 reembolso = form.save(commit=False)
                 reembolso.user = request.user
                 reembolso.approved = None
                 reembolso.approval_date = None
+                reembolso.full_clean()
                 reembolso.save()
+
                 messages.success(request, "¡Solicitud de reembolso enviada con éxito! Será revisada por un organizador.")
                 return redirect('my_refunds')
             except IntegrityError:
@@ -843,12 +868,20 @@ def refund_request(request):
             except Exception as e:
                 messages.error(request, f"Ocurrió un error inesperado al procesar tu solicitud: {str(e)}")
                 print(f"Error inesperado en refund_request (creación): {e}")
-        else:
-            pass
     else:
-        form = RefundRequestForm(initial={'user': request.user})
+        user_pending_requests = RefundRequest.objects.filter(
+            user=request.user,
+            approved__isnull=True
+        )
+
+        if user_pending_requests.exists():
+            messages.warning(request, "Ya tienes solicitudes de reembolso pendientes. Debes esperar a que sean procesadas antes de crear una nueva.")
+            return redirect('my_refunds')
+
+        form = RefundRequestForm(user=request.user)
 
     return render(request, 'app/refund_request.html', {'form': form})
+
 
 @login_required
 @transaction.atomic
@@ -880,7 +913,6 @@ def manage_refunds(request):
             try:
                 with transaction.atomic():
                     if form.cleaned_data["approve"]:
-
                         refund_fee_percentage = calculate_refund_fee(ticket)
                         amount_to_refund = ticket.total * (1 - Decimal(str(refund_fee_percentage / 100)))
 
@@ -904,8 +936,7 @@ def manage_refunds(request):
                             refund.approved = False
                             refund.approval_date = timezone.now()
                             refund.save()
-                            messages.error(request, f"Error al procesar el reembolso monetario para ticket {ticket.ticket_code}. La solicitud fue rechazada por fallo de pago. Contacta a soporte.")
-
+                            messages.error(request, f"Error al procesar el reembolso monetario para ticket {ticket.ticket_code}. La solicitud fue rechazada por fallo de pago.")
                     elif form.cleaned_data["reject"]:
                         refund.approved = False
                         refund.approval_date = timezone.now()
@@ -913,7 +944,6 @@ def manage_refunds(request):
                         messages.warning(request, f"Solicitud de reembolso para ticket {ticket.ticket_code} rechazada.")
 
                     return redirect('manage_refunds')
-
             except IntegrityError:
                 messages.error(request, "Error de integridad de datos al procesar el reembolso.")
             except Exception as e:
@@ -925,8 +955,20 @@ def manage_refunds(request):
                     messages.error(request, f"Error en el formulario de aprobación: {error}")
             return redirect('manage_refunds')
 
-    refunds = RefundRequest.objects.all().order_by("-created_at")
-    forms_dict = {r.pk: RefundApprovalForm(instance=r) for r in refunds}
+    all_refunds = RefundRequest.objects.all().order_by("-created_at")
+    refunds = []
+
+    for refund in all_refunds:
+        try:
+            ticket = Ticket.objects.get(ticket_code=refund.ticket_code)
+            if ticket.event.organizer == request.user:
+                refunds.append(refund)
+        except Ticket.DoesNotExist:
+            continue
+
+    forms_dict = {r.id: RefundApprovalForm(instance=r) for r in refunds}
+
+
     return render(request, 'app/manage_refund.html', {
         'refunds': refunds,
         'forms_dict': forms_dict
@@ -1002,17 +1044,3 @@ def delete_refund(request, id):
     messages.info(request, "Por favor, confirma la eliminación de la solicitud de reembolso.")
     return render(request, 'app/refund_confirm_delete.html', {'refund': refund})
 
-def refund_detail(request, id):
-    refund = get_object_or_404(RefundRequest, id=id)
-    try:
-        ticket = Ticket.objects.get(ticket_code=refund.ticket_code)
-        event = ticket.event
-    except Ticket.DoesNotExist:
-        ticket = None
-        event = None
-
-    return render(request, 'app/refund_detail.html', {
-        'refund': refund,
-        'event': event,
-        'ticket': ticket,
-    })

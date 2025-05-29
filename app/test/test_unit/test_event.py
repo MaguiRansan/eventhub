@@ -33,13 +33,6 @@ class EventModelTest(TestCase):
         self.future_date = timezone.now() + datetime.timedelta(days=1)
         self.past_date = timezone.now() - datetime.timedelta(days=1)
 
-
-    def test_event_new_with_valid_data(self):
-        """Test que verifica la creación de eventos con datos válidos"""
-        scheduled_at = timezone.now() + datetime.timedelta(days=2)
-
-
-
     def test_event_creation(self):
         """Test que verifica la creación correcta de eventos"""
         event = Event.objects.create(
@@ -126,7 +119,6 @@ class EventModelTest(TestCase):
 
     def test_event_new_with_valid_data(self):
         """Test que verifica la creación de eventos con datos válidos"""
-
         success, result = Event.new(
             title="Nuevo evento",
             description="Descripción del nuevo evento",
@@ -140,11 +132,9 @@ class EventModelTest(TestCase):
             vip_tickets=50
         )
 
-
         self.assertTrue(success)
         self.assertIsInstance(result, Event)
         
-       
         if success and isinstance(result, Event):
             self.assertEqual(result.title, "Nuevo evento")
             self.assertEqual(result.description, "Descripción del nuevo evento")
@@ -158,7 +148,6 @@ class EventModelTest(TestCase):
         self.assertEqual(saved_event.description, "Descripción del nuevo evento")
         self.assertEqual(saved_event.organizer, self.organizer)
         self.assertIn(self.category, saved_event.categories.all())
-
 
     def test_event_new_with_invalid_data(self):
         """Test que verifica que Event.new() retorna errores con datos inválidos"""
@@ -336,4 +325,3 @@ class EventModelTest(TestCase):
         
         formatted = event.formatted_date
         self.assertIn("lunes 25 de diciembre del 2023", formatted.lower())
-

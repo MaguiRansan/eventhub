@@ -31,7 +31,7 @@ def clean(self):
 
     if self.user and self.event:
         if Rating.objects.filter(user=self.user, event=self.event).exists():
-            self.add_error(None, "Ya has calificado este evento.") 
+            self.add_error(None, "Ya has calificado este evento.")
 
     return cleaned_data
 
@@ -67,7 +67,7 @@ class CategoryForm(forms.ModelForm):
 
         if not name:
             raise forms.ValidationError("El nombre no puede estar vacío o tener solo espacios")
-        
+
         if len(name) < 3:
             raise forms.ValidationError("El nombre debe tener al menos 3 caracteres")
 
@@ -416,11 +416,15 @@ class RefundRequestForm(forms.ModelForm):
             'details': 'Detalles adicionales',
         }
 
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
     def clean_ticket_code(self):
         ticket_code = self.cleaned_data.get('ticket_code')
         if not ticket_code:
             raise forms.ValidationError("El código de ticket es requerido.")
-        
+
         try:
             ticket = Ticket.objects.get(ticket_code=ticket_code)
         except Ticket.DoesNotExist:
@@ -428,27 +432,39 @@ class RefundRequestForm(forms.ModelForm):
                 "El código de ticket no es válido o no está registrado."
             )
 
-        requesting_user = self.instance.user if self.instance.pk else self.initial.get('user')
+        requesting_user = self.user or (self.instance.user if self.instance.pk else None)
+
         if requesting_user and ticket.user != requesting_user:
-             raise forms.ValidationError("Este ticket no te pertenece o no puedes solicitar un reembolso para él.")
+            raise forms.ValidationError("Este ticket no te pertenece o no puedes solicitar un reembolso para él.")
 
         existing_processed_request = RefundRequest.objects.filter(
             ticket_code=ticket_code
-        ).exclude(pk=self.instance.pk).filter(
-            approved__isnull=False 
+        ).exclude(pk=self.instance.pk if self.instance.pk else 0).filter(
+            approved__isnull=False
         )
-        
+
         if existing_processed_request.exists():
             raise forms.ValidationError("Ya existe una solicitud de reembolso procesada para este ticket. No se pueden generar nuevas solicitudes.")
 
         existing_pending_request = RefundRequest.objects.filter(
             ticket_code=ticket_code
-        ).exclude(pk=self.instance.pk).filter(
-            approved__isnull=True 
+        ).exclude(pk=self.instance.pk if self.instance.pk else 0).filter(
+            approved__isnull=True
         )
         if existing_pending_request.exists():
             raise forms.ValidationError("Ya existe una solicitud de reembolso pendiente para este ticket. Por favor, espera a que sea procesada o edita la existente.")
 
+        user_pending_requests = RefundRequest.objects.filter(
+            user=requesting_user,
+            approved__isnull=True  
+        ).exclude(pk=self.instance.pk if self.instance.pk else 0)
+
+        if user_pending_requests.exists():
+            pending_tickets = [req.ticket_code for req in user_pending_requests]
+            raise forms.ValidationError(
+                f"Ya tienes solicitudes de reembolso pendientes para los tickets: {', '.join(pending_tickets)}. "
+                "Debes esperar a que sean procesadas antes de crear una nueva solicitud."
+            )
 
         if ticket.is_used:
             raise forms.ValidationError("No se puede reembolsar un ticket que ya ha sido usado.")
@@ -457,22 +473,21 @@ class RefundRequestForm(forms.ModelForm):
         if ticket.event.scheduled_at < current_time:
             raise forms.ValidationError("No se puede solicitar un reembolso para un evento que ya ocurrió.")
 
-     
         if not ticket.is_refundable:
             raise forms.ValidationError("Este ticket no es elegible para reembolso según nuestras políticas. (Ej. fuera de plazo permitido)")
-        
+
         if (ticket.event.scheduled_at - current_time).total_seconds() < 48 * 3600:
             raise forms.ValidationError(
                 "No puedes solicitar un reembolso con menos de 48 horas de anticipación al evento."
             )
-        
-        self._ticket = ticket 
+
+        self._ticket = ticket
         return ticket_code
 
     def clean(self):
         cleaned_data = super().clean()
         if not hasattr(self, '_ticket'):
-            return cleaned_data 
+            return cleaned_data
 
         reason = cleaned_data.get('reason')
         details = cleaned_data.get('details')

@@ -321,6 +321,7 @@ def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
         ticket_code__in=refund_codes
     ).aggregate(total=models.Sum('quantity'))['total'] or 0
 
+
     total_existentes -= cantidad_reembolsada
 
     if total_existentes + quantity > 4:
@@ -332,6 +333,7 @@ def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
     ticket.full_clean()
     ticket.save()
     return ticket
+
 
 class PaymentInfo(models.Model):
     CARD_TYPE_CHOICES = [
@@ -380,8 +382,8 @@ class RefundRequest(models.Model):
     ticket_code = models.CharField(max_length=100)
     reason = models.CharField(max_length=20, choices=REASON_CHOICES)
     details= models.TextField(blank=True)
-    approved = models.BooleanField(null=True, default=None)
-    approval_date = models.DateTimeField(null=True, blank=True)
+    approved = models.BooleanField(null=True, blank=True, default=None)
+    approval_date = models.DateTimeField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
 @property
@@ -393,3 +395,6 @@ def event(self):
     except Ticket.DoesNotExist:
         return None
 
+@property
+def is_pending(self):
+    return self.approved is None
