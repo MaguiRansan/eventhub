@@ -57,46 +57,87 @@ class EventViewTest(TestCase):
         self.client.login(username='testuser', password='testpass123')
 
     def test_events_view_default_shows_only_future_events(self):
-        """Test que verifica que por defecto solo se muestran eventos futuros"""
+        """Test que verifica que por defecto solo se muestran eventos futuros y valida los objetos en el contexto."""
         response = self.client.get(reverse('events'))
         self.assertEqual(response.status_code, 200)
+        
+    
         self.assertContains(response, 'Future Event')
         self.assertNotContains(response, 'Past Event')
 
+        self.assertIn('events', response.context)
+        events_in_context = list(response.context['events'])
+
+    
+        self.assertEqual(len(events_in_context), 1)
+        self.assertEqual(events_in_context[0].title, 'Future Event')
+ 
+        self.assertTrue(events_in_context[0].scheduled_at > timezone.now())
+
+
     def test_events_view_with_show_past_parameter(self):
-        """Test que verifica que con el parámetro mostrar_pasados se ven solo eventos pasados"""
+        """Test que verifica que con el parámetro mostrar_pasados se ven solo eventos pasados y valida los objetos en el contexto."""
         response = self.client.get(reverse('events') + '?mostrar_pasados=true')
         self.assertEqual(response.status_code, 200)
-      
+        
+     
         self.assertNotContains(response, 'Future Event')
         self.assertContains(response, 'Past Event')
 
-    def test_events_view_filtering_with_date(self):
-        """Test que verifica que el filtrado por fecha funciona correctamente"""
-        
+    
+        self.assertIn('events', response.context)
+        events_in_context = list(response.context['events']) 
+
        
+        self.assertEqual(len(events_in_context), 1)
+        self.assertEqual(events_in_context[0].title, 'Past Event')
+
+        
+        self.assertTrue(events_in_context[0].scheduled_at < timezone.now())
+
+    def test_events_view_filtering_with_date(self):
+        """Test que verifica que el filtrado por fecha funciona correctamente y valida los objetos en el contexto."""
+        
+     
         past_date = (timezone.now() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
         response = self.client.get(reverse('events') + f'?fecha={past_date}')
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'Future Event')
         self.assertContains(response, 'Past Event')
         
-    
+        events_in_context_past = list(response.context['events'])
+        self.assertEqual(len(events_in_context_past), 1)
+        self.assertEqual(events_in_context_past[0].title, 'Past Event')
+        self.assertTrue(events_in_context_past[0].scheduled_at.date() == (timezone.now() - datetime.timedelta(days=1)).date())
+        
+       
         future_date = (timezone.now() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
         response = self.client.get(reverse('events') + f'?fecha={future_date}')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Future Event')
         self.assertNotContains(response, 'Past Event')
 
+        events_in_context_future = list(response.context['events'])
+        self.assertEqual(len(events_in_context_future), 1)
+        self.assertEqual(events_in_context_future[0].title, 'Future Event')
+        self.assertTrue(events_in_context_future[0].scheduled_at.date() == (timezone.now() + datetime.timedelta(days=1)).date())
+
+
     def test_events_view_filtering_with_date_overrides_show_past(self):
-        """Test que verifica que cuando se especifica fecha, esta tiene prioridad sobre mostrar_pasados"""
+        """Test que verifica que cuando se especifica fecha, esta tiene prioridad sobre mostrar_pasados y valida los objetos en el contexto."""
         
-       
         future_date = (timezone.now() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
         response = self.client.get(reverse('events') + f'?fecha={future_date}&mostrar_pasados=true')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Future Event')
         self.assertNotContains(response, 'Past Event')
+
+       
+        events_in_context = list(response.context['events'])
+        self.assertEqual(len(events_in_context), 1)
+        self.assertEqual(events_in_context[0].title, 'Future Event')
+        self.assertTrue(events_in_context[0].scheduled_at.date() == (timezone.now() + datetime.timedelta(days=1)).date())
+
 
     def test_events_view_template_context(self):
         """Test que verifica que el contexto se pasa correctamente al template"""
@@ -109,17 +150,17 @@ class EventViewTest(TestCase):
         self.assertIn('categorias', response.context)
         self.assertIn('venues', response.context)
         
-       
+        
         self.assertFalse(response.context['user_is_organizer'])
         
-       
+        
         events = response.context['events']
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].title, 'Future Event')
 
     def test_events_view_category_filtering(self):
-        """Test que verifica el filtrado por categoría"""
-      
+        """Test que verifica el filtrado por categoría y valida los objetos en el contexto."""
+    
         other_category = Category.objects.create(
             name='Other Category',
             description='Other Description',
@@ -136,15 +177,22 @@ class EventViewTest(TestCase):
         )
         other_event.categories.add(other_category)
         
-      
+    
         response = self.client.get(reverse('events') + f'?categoria={self.category.pk}')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Future Event')
         self.assertNotContains(response, 'Other Event')
 
+      
+        events_in_context = list(response.context['events'])
+        self.assertEqual(len(events_in_context), 1)
+        self.assertEqual(events_in_context[0].title, 'Future Event')
+        self.assertTrue(self.category in events_in_context[0].categories.all())
+
+
     def test_events_view_venue_filtering(self):
-        """Test que verifica el filtrado por venue"""
-     
+        """Test que verifica el filtrado por venue y valida los objetos en el contexto."""
+    
         other_venue = Venue.objects.create(
             name='Other Venue',
             address='456 Other St',
@@ -169,3 +217,9 @@ class EventViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Future Event')
         self.assertNotContains(response, 'Other Venue Event')
+
+   
+        events_in_context = list(response.context['events'])
+        self.assertEqual(len(events_in_context), 1)
+        self.assertEqual(events_in_context[0].title, 'Future Event')
+        self.assertEqual(events_in_context[0].venue, self.venue)
