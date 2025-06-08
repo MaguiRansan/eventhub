@@ -135,6 +135,7 @@ class EventModelTest(TestCase):
         self.assertTrue(success)
         self.assertIsInstance(result, Event)
         
+       
         if success and isinstance(result, Event):
             self.assertEqual(result.title, "Nuevo evento")
             self.assertEqual(result.description, "Descripción del nuevo evento")
@@ -148,6 +149,7 @@ class EventModelTest(TestCase):
         self.assertEqual(saved_event.description, "Descripción del nuevo evento")
         self.assertEqual(saved_event.organizer, self.organizer)
         self.assertIn(self.category, saved_event.categories.all())
+
 
     def test_event_new_with_invalid_data(self):
         """Test que verifica que Event.new() retorna errores con datos inválidos"""
