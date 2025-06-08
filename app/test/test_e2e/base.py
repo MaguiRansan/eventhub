@@ -1,6 +1,8 @@
 import os
+
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from playwright.sync_api import sync_playwright
+
 from app.models import User
 
 os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
@@ -15,7 +17,7 @@ class BaseE2ETest(StaticLiveServerTestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls.playwright = sync_playwright().start()
-        cls.browser = cls.playwright.chromium.launch(headless=False, slow_mo=int(slow_mo))
+        cls.browser = cls.playwright.chromium.launch(headless=headless, slow_mo=int(slow_mo))
 
     @classmethod
     def tearDownClass(cls):
