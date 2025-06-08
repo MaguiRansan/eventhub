@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.test import TestCase
 
 from app.models import Event, Ticket, User
 
@@ -27,20 +28,21 @@ def test_no_se_puede_comprar_mas_de_lo_disponible_para_cada_tipo():
         vip_tickets_available=3,
     )
 
-    with pytest.raises(ValidationError) as exc_info_general:
+    test_case = TestCase()
+    
+    with test_case.assertRaises(ValidationError) as exc_info_general:
         Ticket.objects.create(
             user=buyer,
             event=event,
             type=Ticket.TicketType.GENERAL,
-            quantity=6,  
+            quantity=6,
         )
-    assert "entradas disponibles" in str(exc_info_general.value)
-
-    with pytest.raises(ValidationError) as exc_info_vip:
+    test_case.assertIn("entradas disponibles", str(exc_info_general.value))
+    with test_case.assertRaises(ValidationError) as exc_info_vip:
         Ticket.objects.create(
             user=buyer,
             event=event,
             type=Ticket.TicketType.VIP,
-            quantity=4,  
+            quantity=4,
         )
-    assert "entradas disponibles" in str(exc_info_vip.value)
+    test_case.assertIn("entradas disponibles", str(exc_info_vip.value))
