@@ -371,30 +371,31 @@ class PaymentInfo(models.Model):
 
 class RefundRequest(models.Model):
     REASON_CHOICES = [
-    ('Salud', 'Problemas de salud'),
-    ('Emergencia Familiar', 'Emergencia familiar'),
-    ('Trabajo', 'Compromisos laborales'),
-    ('Transporte', 'Problemas de transporte'),
-    ('Evento cancelado', 'El evento fue pospuesto o cancelado'),
-    ('Otros', 'Otro motivo'),]
-
+        ('Salud', 'Problemas de salud'),
+        ('Emergencia Familiar', 'Emergencia familiar'),
+        ('Trabajo', 'Compromisos laborales'),
+        ('Transporte', 'Problemas de transporte'),
+        ('Evento cancelado', 'El evento fue pospuesto o cancelado'),
+        ('Otros', 'Otro motivo'),
+    ]
+    
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="refund_requests")
     ticket_code = models.CharField(max_length=100)
     reason = models.CharField(max_length=20, choices=REASON_CHOICES)
-    details= models.TextField(blank=True)
+    details = models.TextField(blank=True)
     approved = models.BooleanField(null=True, blank=True, default=None)
     approval_date = models.DateTimeField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
-@property
-def event(self):
-    from .models import Ticket
-    try:
-        ticket = Ticket.objects.get(ticket_code=self.ticket_code)
-        return ticket.event
-    except Ticket.DoesNotExist:
-        return None
+    @property 
+    def event(self):
+        from .models import Ticket
+        try:
+            ticket = Ticket.objects.get(ticket_code=self.ticket_code)
+            return ticket.event
+        except Ticket.DoesNotExist:
+            return None
 
-@property
-def is_pending(self):
-    return self.approved is None
+    @property  
+    def is_pending(self):
+        return self.approved is None

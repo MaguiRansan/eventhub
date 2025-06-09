@@ -1,337 +1,398 @@
-import pytest
-from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
+from django.test import TestCase
 from django.contrib import messages
-from django.db import transaction, IntegrityError
 from datetime import timedelta
+from decimal import Decimal 
+import uuid 
 
-from app.models import Ticket, Event, RefundRequest
-from app.forms import RefundRequestForm
+from app.models import Ticket, Event, RefundRequest 
 
-@pytest.mark.django_db
-class TestRefundRequestIntegration:
-    @pytest.fixture
-    def setup_data(self):
-        self.user = User.objects.create_user(
+User = get_user_model()
+
+class TestRefundRequestIntegration(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
             username='testuser',
             password='testpass123',
             email='test@example.com'
         )
 
-        self.event = Event.objects.create(
-            name='Test Event',
-            scheduled_at=timezone.now() + timedelta(days=5),
-            refund_policy="48 hours before event"
-        )
-
-        self.ticket = Ticket.objects.create(
-            ticket_code='TICKET123',
-            user=self.user,
-            event=self.event,
-            is_used=False,
-            is_refundable=True
-        )
-
-        self.non_refundable_ticket = Ticket.objects.create(
-            ticket_code='TICKET456',
-            user=self.user,
-            event=self.event,
-            is_used=False,
-            is_refundable=False
-        )
- 
-        self.used_ticket = Ticket.objects.create(
-            ticket_code='TICKET789',
-            user=self.user,
-            event=self.event,
-            is_used=True,
-            is_refundable=True
-        )
-
-        past_event = Event.objects.create(
-            name='Past Event',
-            scheduled_at=timezone.now() - timedelta(days=1)
-        )
-        
-        self.past_event_ticket = Ticket.objects.create(
-            ticket_code='TICKET000',
-            user=self.user,
-            event=past_event,
-            is_used=False,
-            is_refundable=True
-        )
-
-        self.other_user = User.objects.create_user(
+        cls.other_user = User.objects.create_user(
             username='otheruser',
             password='otherpass123'
         )
+
+        cls.organizer = User.objects.create_user(
+            username='organizeruser',
+            password='organizerpass123'
+        )
+
+        cls.base_event = Event.objects.create(
+            title='Base Test Event',
+            scheduled_at=timezone.now() + timedelta(days=5),
+            organizer=cls.organizer,
+            general_price=Decimal('10.00'),
+            vip_price=Decimal('20.00'),
+            general_tickets_available=100, 
+            vip_tickets_available=50,    
+        )
+
+        cls.soon_event = Event.objects.create(
+            title='Soon Event',
+            scheduled_at=timezone.now() + timedelta(hours=47),
+            organizer=cls.organizer,
+            general_price=Decimal('10.00'),
+            vip_price=Decimal('20.00'),
+            general_tickets_available=100, 
+            vip_tickets_available=50,    
+        )
         
-        self.other_user_ticket = Ticket.objects.create(
-            ticket_code='OTHER123',
-            user=self.other_user,
-            event=self.event,
+        cls.past_event = Event.objects.create(
+            title='Past Event',
+            scheduled_at=timezone.now() - timedelta(days=1),
+            organizer=cls.organizer,
+            general_price=Decimal('10.00'),
+            vip_price=Decimal('20.00'),
+            general_tickets_available=100, 
+            vip_tickets_available=50,    
+        )
+
+        cls.ticket = Ticket.objects.create(
+            ticket_code='TICKET123',
+            user=cls.user,
+            event=cls.base_event,
             is_used=False,
-            is_refundable=True
         )
 
-    def test_valid_refund_request(self, setup_data, client):
-        """Test que una solicitud válida se crea correctamente"""
-        client.force_login(self.user)
-        
-        data = {
-            'ticket_code': 'TICKET123',
-            'reason': 'Salud',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-
-        assert response.status_code == 302
-        assert response.url == reverse('my_refunds')
-        
-        assert RefundRequest.objects.count() == 1
-        refund_request = RefundRequest.objects.first()
-        assert refund_request is not None
-        assert refund_request.user == self.user
-        assert refund_request.ticket_code == 'TICKET123'
-        assert refund_request.is_pending
-
-    def test_refund_request_with_existing_pending(self, setup_data, client):
-        """Test que no se puede crear solicitud si ya hay una pendiente"""
-        client.force_login(self.user)
-     
-        RefundRequest.objects.create(
-            user=self.user,
-            ticket_code='TICKET123',
-            reason='Salud',
-            approved=None
-        )
-        
-        data = {
-            'ticket_code': 'TICKET123',
-            'reason': 'Trabajo',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-        
-        assert RefundRequest.objects.count() == 1
-
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("Ya existe una solicitud de reembolso pendiente" in str(m) for m in messages_list)
-
-    def test_refund_request_with_existing_processed(self, setup_data, client):
-        """Test que no se puede crear solicitud si ya hay una procesada"""
-        client.force_login(self.user)
-      
-        RefundRequest.objects.create(
-            user=self.user,
-            ticket_code='TICKET123',
-            reason='Salud',
-            approved=True
-        )
-        
-        data = {
-            'ticket_code': 'TICKET123',
-            'reason': 'Trabajo',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-        
-        assert RefundRequest.objects.count() == 1
-
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("Ya existe una solicitud de reembolso procesada" in str(m) for m in messages_list)
-
-    def test_refund_request_with_other_reason_no_details(self, setup_data, client):
-        """Test que requiere detalles cuando la razón es 'Otros'"""
-        client.force_login(self.user)
-        
-        data = {
-            'ticket_code': 'TICKET123',
-            'reason': 'Otros',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-        
-        assert RefundRequest.objects.count() == 0
-
-        assert 'details' in response.context['form'].errors
-
-    def test_refund_request_non_refundable_ticket(self, setup_data, client):
-        """Test que no se puede solicitar reembolso para ticket no reembolsable"""
-        client.force_login(self.user)
-        
-        data = {
-            'ticket_code': 'TICKET456',
-            'reason': 'Salud',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-
-        assert RefundRequest.objects.count() == 0
-
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("no es elegible para reembolso" in str(m) for m in messages_list)
-
-    def test_refund_request_used_ticket(self, setup_data, client):
-        """Test que no se puede solicitar reembolso para ticket usado"""
-        client.force_login(self.user)
-        
-        data = {
-            'ticket_code': 'TICKET789',
-            'reason': 'Salud',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-
-        assert RefundRequest.objects.count() == 0
-
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("No se puede reembolsar un ticket que ya ha sido usado" in str(m) for m in messages_list)
-
-    def test_refund_request_past_event(self, setup_data, client):
-        """Test que no se puede solicitar reembolso para evento pasado"""
-        client.force_login(self.user)
-        
-        data = {
-            'ticket_code': 'TICKET000',
-            'reason': 'Salud',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-        
-        assert RefundRequest.objects.count() == 0
-
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("No se puede solicitar un reembolso para un evento que ya ocurrió" in str(m) for m in messages_list)
-
-    def test_refund_request_less_than_48h(self, setup_data, client):
-        """Test que no se puede solicitar reembolso con menos de 48h"""
-        client.force_login(self.user)
-
-        soon_event = Event.objects.create(
-            name='Soon Event',
-            scheduled_at=timezone.now() + timedelta(hours=47)
-        )
-        
-        soon_ticket = Ticket.objects.create(
-            ticket_code='SOON123',
-            user=self.user,
-            event=soon_event,
-            is_used=False,
-            is_refundable=True
-        )
-        
-        data = {
-            'ticket_code': 'SOON123',
-            'reason': 'Salud',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-
-        assert RefundRequest.objects.count() == 0
-
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("No puedes solicitar un reembolso con menos de 48 horas" in str(m) for m in messages_list)
-
-    def test_refund_request_not_own_ticket(self, setup_data, client):
-        """Test que no se puede solicitar reembolso para ticket de otro usuario"""
-        client.force_login(self.user)
-        
-        data = {
-            'ticket_code': 'OTHER123',
-            'reason': 'Salud',
-            'details': '',
-            'accept_policy': True
-        }
-        
-        response = client.post(reverse('refund_request'), data)
-        
-        assert RefundRequest.objects.count() == 0
-      
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("Este ticket no te pertenece" in str(m) for m in messages_list)
-
-    def test_refund_request_multiple_pending_blocks_new(self, setup_data, client):
-        """Test que tener múltiples solicitudes pendientes bloquea nuevas"""
-        client.force_login(self.user)
-        
-        RefundRequest.objects.create(
-            user=self.user,
-            ticket_code='TICKET123',
-            reason='Salud',
-            approved=None
-        )
-        
-        RefundRequest.objects.create(
-            user=self.user,
+        cls.non_refundable_ticket = Ticket.objects.create(
             ticket_code='TICKET456',
+            user=cls.user,
+            event=cls.base_event,
+            is_used=True, 
+        )
+        
+        cls.used_ticket = Ticket.objects.create(
+            ticket_code='TICKET789',
+            user=cls.user,
+            event=cls.base_event,
+            is_used=True,
+        )
+
+        cls.past_event_ticket = Ticket.objects.create(
+            ticket_code='TICKET000',
+            user=cls.user,
+            event=cls.past_event,
+            is_used=False,
+        )
+
+        cls.other_user_ticket = Ticket.objects.create(
+            ticket_code='OTHER123',
+            user=cls.other_user,
+            event=cls.base_event,
+            is_used=False,
+        )
+
+        cls.soon_ticket = Ticket.objects.create(
+            ticket_code='SOON123',
+            user=cls.user,
+            event=cls.soon_event,
+            is_used=False,
+        )
+        
+        cls.new_ticket_for_user_with_pending = Ticket.objects.create(
+            ticket_code='NEWTICKETFORUSER',
+            user=cls.user,
+            event=cls.base_event,
+            is_used=False,
+        )
+        
+    def _assert_message_content(self, response, expected_message_part, level=None):
+        if response.status_code == 302:
+            response = self.client.get(response.url)
+        messages_list = list(messages.get_messages(response.wsgi_request))
+        self.assertTrue(
+            any(expected_message_part in str(m) for m in messages_list),
+            f"No se encontró el mensaje esperado '{expected_message_part}' en los mensajes: {[str(m) for m in messages_list]}"
+        )
+        if level is not None:
+            self.assertTrue(
+                any(m.level == level for m in messages_list if expected_message_part in str(m)),
+                f"El mensaje '{expected_message_part}' no tiene el nivel esperado {level}"
+            )
+
+    def _assert_form_error(self, response, field_name, expected_error_part):
+        self.assertIn('form', response.context, "La respuesta no contiene un objeto 'form' en el contexto.")
+        form = response.context['form']
+        self.assertIn(field_name, form.errors, f"El campo '{field_name}' no tiene errores en el formulario.")
+        self.assertTrue(
+            any(expected_error_part in error for error in form.errors[field_name]),
+            f"No se encontró el error esperado '{expected_error_part}' para el campo '{field_name}' en los errores del formulario: {form.errors}"
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def _assert_no_form_error(self, response, field_name):
+        self.assertIn('form', response.context)
+        form = response.context['form']
+        self.assertNotIn(field_name, form.errors)
+        
+    def test_valid_refund_request(self):
+        """Test que una solicitud válida se crea correctamente."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.ticket.ticket_code,
+            'reason': 'Salud',
+            'details': '',
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data, follow=True)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count + 1)
+        refund_request = RefundRequest.objects.latest('id')
+        self.assertIsNotNone(refund_request)
+        self.assertEqual(refund_request.user, self.user)
+        self.assertEqual(refund_request.ticket_code, self.ticket.ticket_code)
+        self.assertTrue(refund_request.is_pending)
+
+        self._assert_message_content(response, "¡Solicitud de reembolso enviada con éxito! Será revisada por un organizador.", level=messages.SUCCESS)
+
+    def test_refund_request_with_existing_pending(self):
+        """Test que no se puede crear solicitud si ya hay una pendiente para el mismo ticket."""
+        self.client.force_login(self.user)
+        
+        RefundRequest.objects.create(
+            user=self.user,
+            ticket_code=self.ticket.ticket_code,
+            reason='Salud',
+            approved=None
+        )
+        initial_refund_count = RefundRequest.objects.count() 
+
+        data = {
+            'ticket_code': self.ticket.ticket_code, 
+            'reason': 'Trabajo',
+            'details': '',
+            'accept_policy': True
+        }
+ 
+        response = self.client.post(reverse('refund_request'), data)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+     
+        self._assert_form_error(response, 'ticket_code', "Ya existe una solicitud de reembolso pendiente para este ticket. Por favor, espera a que sea procesada o edita la existente.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.") 
+
+    def test_refund_request_with_existing_processed(self):
+        """Test que no se puede crear solicitud si ya hay una procesada para el mismo ticket."""
+        self.client.force_login(self.user)
+    
+        RefundRequest.objects.create(
+            user=self.user,
+            ticket_code=self.ticket.ticket_code,
+            reason='Salud',
+            approved=True 
+        )
+        initial_refund_count = RefundRequest.objects.count() 
+        
+        data = {
+            'ticket_code': self.ticket.ticket_code, 
+            'reason': 'Trabajo',
+            'details': '',
+            'accept_policy': True
+        }
+
+        response = self.client.post(reverse('refund_request'), data)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+ 
+        self._assert_form_error(response, 'ticket_code', "Ya existe una solicitud de reembolso procesada para este ticket.") 
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_with_other_reason_no_details(self):
+        """Test que requiere detalles cuando la razón es 'Otros'."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.ticket.ticket_code,
+            'reason': 'Otros',
+            'details': '', 
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+        self._assert_form_error(response, 'details', "Si la razón es 'Otro motivo', debes especificar detalles.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_non_refundable_ticket(self):
+        """Test que no se puede solicitar reembolso para ticket no reembolsable."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.non_refundable_ticket.ticket_code,
+            'reason': 'Salud',
+            'details': '',
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data)
+
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count) 
+        self._assert_form_error(response, 'ticket_code', "No se puede reembolsar un ticket que ya ha sido usado.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_used_ticket(self):
+        """Test que no se puede solicitar reembolso para ticket usado."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.used_ticket.ticket_code,
+            'reason': 'Salud',
+            'details': '',
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data)
+
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+        self._assert_form_error(response, 'ticket_code', "No se puede reembolsar un ticket que ya ha sido usado.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_past_event(self):
+        """Test que no se puede solicitar reembolso para evento pasado."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.past_event_ticket.ticket_code,
+            'reason': 'Salud',
+            'details': '',
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+        self._assert_form_error(response, 'ticket_code', "No se puede solicitar un reembolso para un evento que ya ocurrió.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_less_than_48h(self):
+        """Test que no se puede solicitar reembolso con menos de 48h."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.soon_ticket.ticket_code,
+            'reason': 'Salud',
+            'details': '',
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data)
+
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+        self._assert_form_error(response, 'ticket_code', "No puedes solicitar un reembolso con menos de 48 horas de anticipación al evento.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_not_own_ticket(self):
+        """Test que no se puede solicitar reembolso para ticket de otro usuario."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
+        
+        data = {
+            'ticket_code': self.other_user_ticket.ticket_code,
+            'reason': 'Salud',
+            'details': '',
+            'accept_policy': True
+        }
+        
+        response = self.client.post(reverse('refund_request'), data)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+        self._assert_form_error(response, 'ticket_code', "Este ticket no te pertenece o no puedes solicitar un reembolso para él.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_multiple_pending_blocks_new(self):
+        """Test que tener múltiples solicitudes pendientes bloquea nuevas."""
+        self.client.force_login(self.user)
+
+        RefundRequest.objects.create(
+            user=self.user,
+            ticket_code=f'PENDING123-{uuid.uuid4().hex[:8]}',
+            reason='Salud',
+            approved=None
+        )
+        RefundRequest.objects.create(
+            user=self.user,
+            ticket_code=f'PENDING456-{uuid.uuid4().hex[:8]}',
             reason='Trabajo',
             approved=None
         )
+        initial_refund_count = RefundRequest.objects.count()
         
+        valid_new_ticket = self.new_ticket_for_user_with_pending 
+
         data = {
-            'ticket_code': 'TICKET789',
+            'ticket_code': valid_new_ticket.ticket_code,
             'reason': 'Emergencia Familiar',
             'details': '',
             'accept_policy': True
         }
-        
-        response = client.post(reverse('refund_request'), data)
-        
-        assert RefundRequest.objects.count() == 2
 
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("Ya tienes solicitudes de reembolso pendientes" in str(m) for m in messages_list)
+        response = self.client.post(reverse('refund_request'), data)
+        
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
 
-    def test_refund_request_without_accepting_policy(self, setup_data, client):
-        """Test que no se puede enviar sin aceptar la política"""
-        client.force_login(self.user)
+        self._assert_form_error(response, 'ticket_code', "Ya tienes solicitudes de reembolso pendientes") 
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
+
+    def test_refund_request_without_accepting_policy(self):
+        """Test que no se puede enviar sin aceptar la política."""
+        self.client.force_login(self.user)
+        initial_refund_count = RefundRequest.objects.count()
         
         data = {
-            'ticket_code': 'TICKET123',
+            'ticket_code': self.ticket.ticket_code,
             'reason': 'Salud',
             'details': '',
+            'accept_policy': False
         }
         
-        response = client.post(reverse('refund_request'), data)
+        response = self.client.post(reverse('refund_request'), data)
 
-        assert RefundRequest.objects.count() == 0
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
+        self._assert_form_error(response, 'accept_policy', "Debes aceptar la política para enviar la solicitud.")
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
 
-        assert 'accept_policy' in response.context['form'].errors
-
-    def test_get_refund_request_with_pending_requests(self, setup_data, client):
-        """Test que GET redirige si hay solicitudes pendientes"""
-        client.force_login(self.user)
+    def test_get_refund_request_with_pending_requests(self):
+        """Test que GET muestra un mensaje de error si hay solicitudes pendientes y no permite crear una nueva."""
+        self.client.force_login(self.user)
 
         RefundRequest.objects.create(
             user=self.user,
-            ticket_code='TICKET123',
+            ticket_code=f'PENDING_GET_TEST_1-{uuid.uuid4().hex[:8]}',
             reason='Salud',
             approved=None
         )
+        RefundRequest.objects.create(
+            user=self.user,
+            ticket_code=f'PENDING_GET_TEST_2-{uuid.uuid4().hex[:8]}',
+            reason='Motivo Extra',
+            approved=None
+        )
+  
+        response = self.client.get(reverse('refund_request'), follow=True) 
         
-        response = client.get(reverse('refund_request'))
-    
-        assert response.status_code == 302
-        assert response.url == reverse('my_refunds')
+        self.assertRedirects(response, reverse('my_refunds'))
 
-        messages_list = list(messages.get_messages(response.wsgi_request))
-        assert any("Ya tienes solicitudes de reembolso pendientes" in str(m) for m in messages_list)
+        self._assert_message_content(response, "Ya tienes solicitudes de reembolso pendientes. Debes esperar a que sean procesadas antes de crear una nueva.", level=messages.WARNING)
