@@ -20,8 +20,8 @@ RUN apt-get update && apt-get install -y \
 COPY . .
 
 # Variables de entorno para evitar creación de archivos .pyc y activar modo no interactivo
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Comando para ejecutar el servidor 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
