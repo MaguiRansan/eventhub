@@ -1,4 +1,4 @@
-name: Integración Continua (CI) 
+name: Integración Continua (CI)
 
 on:
   push:
@@ -55,8 +55,8 @@ jobs:
         run: coverage run --source="./app" --omit="./app/migrations/**,./app/test/test_e2e/**" manage.py test app.test.test_unit app.test.test_integration
 
       - name: Generar reporte de cobertura y verificar umbral
-        run: coverage report --fail-under=72
-        
+        run: coverage report --fail-under=72 
+
   e2e:
     name: Tests End-to-End
     runs-on: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
           python -c '
           import requests
           import time
-          url = "http://localhost:8000/accounts/login/" 
+          url = "http://localhost:8000/accounts/login/"
           for i in range(60):
               try:
                   response = requests.get(url, timeout=5)
@@ -103,4 +103,3 @@ jobs:
 
       - name: Ejecutar tests End-to-End
         run: python manage.py test test.test_e2e
-
