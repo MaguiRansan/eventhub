@@ -1,0 +1,15 @@
+pycache/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+env/
+venv/
+.git
+.gitignore
+.vscode/
+.idea/
+db.sqlite3
+.DS_Store
+staticfiles/
