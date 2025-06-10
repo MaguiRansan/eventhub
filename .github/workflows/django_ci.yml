@@ -102,4 +102,4 @@ jobs:
           '
 
       - name: Ejecutar tests End-to-End
-        run: python manage.py test test.test_e2e
+        run: python manage.py test app.test.test_e2e
