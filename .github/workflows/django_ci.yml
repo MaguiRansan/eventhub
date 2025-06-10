@@ -54,7 +54,9 @@ jobs:
       - name: Ejecutar tests unitarios e integración
         run: coverage run --source="./app" --omit="./app/migrations/**,./app/test/test_e2e/**" manage.py test app.test.test_unit app.test.test_integration
 
-
+      - name: Generar reporte de cobertura y verificar umbral
+        run: coverage report --fail-under=72
+        
   e2e:
     name: Tests End-to-End
     runs-on: ubuntu-latest
