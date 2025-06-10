@@ -1,10 +1,12 @@
 import datetime
+from decimal import Decimal
+from typing import cast
+
 from django.test import TestCase
 from django.utils import timezone
-from decimal import Decimal
-from django.core.exceptions import ValidationError
-from app.models import Event, User, Venue, Category
-from typing import cast 
+
+from app.models import Category, Event, User, Venue
+
 
 class EventModelTest(TestCase):
     def setUp(self):

@@ -1,6 +1,7 @@
-from django.db import models
-from django.conf import settings
 from cryptography.fernet import Fernet, InvalidToken
+from django.conf import settings
+from django.db import models
+
 
 class EncryptedCharField(models.Field):
     def __init__(self, *args, **kwargs):

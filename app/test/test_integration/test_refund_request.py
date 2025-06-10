@@ -1,13 +1,14 @@
+import uuid
+from datetime import timedelta
+from decimal import Decimal
+
+from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from django.test import TestCase
-from django.contrib import messages
-from datetime import timedelta
-from decimal import Decimal 
-import uuid 
 
-from app.models import Ticket, Event, RefundRequest 
+from app.models import Event, RefundRequest, Ticket
 
 User = get_user_model()
 

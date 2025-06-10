@@ -1,16 +1,16 @@
-import re
-import os
-import logging
 import datetime
-from decimal import Decimal
-import urllib.parse
+import logging
+import re
 import time
-from django.utils import timezone
+import urllib.parse
+from decimal import Decimal
+
 from django.test import Client
+from django.utils import timezone
 from playwright.sync_api import expect
 
+from app.models import Event, Ticket, User, Venue
 from app.test.test_e2e.base import BaseE2ETest
-from app.models import Event, User, Venue, Ticket, Rating
 
 logger = logging.getLogger(__name__)
 

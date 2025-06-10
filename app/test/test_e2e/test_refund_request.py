@@ -1,18 +1,17 @@
-import re
+import asyncio
 import logging
-import asyncio 
-import threading 
+import re
+import threading
 from datetime import timedelta
 from decimal import Decimal
 
-from asgiref.sync import sync_to_async 
+from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
-from django.contrib.staticfiles.testing import StaticLiveServerTestCase 
 from django.utils import timezone
-from playwright.sync_api import expect 
+from playwright.sync_api import expect
 
-from app.models import Ticket, Event, RefundRequest
-from app.test.test_e2e.base import BaseE2ETest 
+from app.models import Event, RefundRequest, Ticket
+from app.test.test_e2e.base import BaseE2ETest
 
 User = get_user_model() 
 

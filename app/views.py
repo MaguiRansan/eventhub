@@ -1,22 +1,32 @@
 import datetime
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib import messages
-from django.http import HttpResponseForbidden, HttpResponseBadRequest, HttpResponse
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import login_required
-from django.utils import timezone
-from django.db.models import Count, Sum
-from django.core.exceptions import ValidationError
 from decimal import Decimal
-import qrcode
 from io import BytesIO
-import qrcode.constants
-from django.db import transaction
-from django.db import IntegrityError
-from django.db.models import Q
 
-from .models import Event, Ticket, User, PaymentInfo, Rating, Category, Venue, RefundRequest
-from .forms import EventForm, TicketForm, PaymentForm, TicketFilterForm, RatingForm, CategoryForm, VenueForm, RefundRequestForm, RefundApprovalForm
+import qrcode
+import qrcode.constants
+from django.contrib import messages
+from django.contrib.auth import authenticate, login
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
+from django.db.models import Count, Sum
+from django.http import HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+
+from .forms import (
+    CategoryForm,
+    EventForm,
+    PaymentForm,
+    RatingForm,
+    RefundApprovalForm,
+    RefundRequestForm,
+    TicketFilterForm,
+    TicketForm,
+    VenueForm,
+)
+from .models import Category, Event, Rating, RefundRequest, Ticket, User, Venue
+
 
 def register(request):
     if request.method == "POST":
@@ -572,8 +582,6 @@ def ticket_use(request, ticket_id):
             messages.success(request, f"Ticket #{ticket.ticket_code} marcado como usado")
 
     return redirect('event_detail', id=ticket.event.pk)
-
-from app.models import RefundRequest  
 
 @login_required
 def ticket_list(request):

@@ -1,10 +1,11 @@
-import re
-import logging
 import datetime
-from django.utils import timezone
-from playwright.sync_api import expect, Locator, Page
+import logging
+import re
 
-from app.models import Event, User, Category, Venue
+from django.utils import timezone
+from playwright.sync_api import Locator, expect
+
+from app.models import Category, Event, User, Venue
 from app.test.test_e2e.base import BaseE2ETest
 
 logger = logging.getLogger(__name__)
