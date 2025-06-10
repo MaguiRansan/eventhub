@@ -50,8 +50,7 @@ jobs:
 
       - name: Ejecutar tests unitarios e integración
         run: |
-         export PYTHONPATH=$PYTHONPATH:$(pwd)/app
-          coverage run --source="./app" --omit="./app/migrations/" manage.py test test.test_unit test.test_integration
+          coverage run --source="./app" --omit="./app/migrations/" manage.py test app/test/test_unit app/test/test_integration
 
       - name: Verificar cobertura de tests
         run: coverage report --fail-under=80
