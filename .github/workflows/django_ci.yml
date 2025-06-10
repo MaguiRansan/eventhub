@@ -49,7 +49,7 @@ jobs:
         run: ruff check .
 
       - name: Ejecutar tests unitarios e integración
-        run: coverage run --source="./app" --omit="./app/migrations/" manage.py test app.test
+        run: coverage run --source="./app" --omit="./app/migrations/" manage.py test app.test.test_unit app.test.test_integration
 
       - name: Verificar cobertura de tests
         run: coverage report --fail-under=80
