@@ -255,7 +255,7 @@ def edit_event(request, event_id):
             'vip_tickets_total': event.vip_tickets_total,
             'scheduled_date': event.scheduled_at.date(),
             'scheduled_time': event.scheduled_at.time(),
-            'venue': event.venue.id if event.venue else None,
+            'venue': event.venue.pk if event.venue else None,
         }
         form = EventForm(initial=initial_data, instance=event)
 

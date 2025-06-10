@@ -49,8 +49,10 @@ jobs:
         run: ruff check .
 
       - name: Ejecutar tests unitarios e integración
-        run: coverage run --source="./app" --omit="./app/migrations/" manage.py test test.test_unit test.test_integration
-
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)
+          coverage run --source="./app" --omit="./app/migrations/" manage.py test test.test_unit test.test_integration
+          
       - name: Verificar cobertura de tests
         run: coverage report --fail-under=80
 
