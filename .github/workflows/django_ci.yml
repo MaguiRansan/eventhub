@@ -1,0 +1,103 @@
+name: Integración Continua (CI) 
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build del Proyecto
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Instalar navegadores para Playwright
+        run: python -m playwright install --with-deps chromium
+
+  tests:
+    name: Tests Unitarios e Integración
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar chequeo estático (Ruff)
+        run: ruff check .
+
+      - name: Ejecutar tests unitarios e integración
+        run: coverage run --source="./app" --omit="./app/migrations/" manage.py test test.test_unit test.test_integration
+
+      - name: Verificar cobertura de tests
+        run: coverage report --fail-under=80
+
+  e2e:
+    name: Tests End-to-End
+    runs-on: ubuntu-latest
+    needs: tests
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Instalar navegadores para Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Iniciar el servidor Django en segundo plano
+        run: nohup python manage.py runserver 0.0.0.0:8000 --settings=eventhub.settings &
+        working-directory: .
+
+      - name: Esperar a que el servidor esté disponible
+        run: |
+          python -c '
+          import requests
+          import time
+          url = "http://localhost:8000/accounts/login/" 
+          for i in range(60):
+              try:
+                  response = requests.get(url, timeout=5)
+                  response.raise_for_status()
+                  print("Django server is ready")
+                  break
+              except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                  print(f"Waiting for Django server... {i+1}s - Error: {e}")
+                  time.sleep(1)
+          else:
+              raise SystemExit("Django server did not start in time. E2E tests cannot run.")
+          '
+
+      - name: Ejecutar tests End-to-End
+        run: python manage.py test test.test_e2e
+
