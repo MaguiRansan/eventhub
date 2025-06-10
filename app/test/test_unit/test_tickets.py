@@ -2,11 +2,11 @@ import datetime
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
+from django.db import models
 from django.test import TestCase
 from django.utils import timezone
-from django.db import models
 
-from app.models import Event, User, Ticket
+from app.models import Event, Ticket, User
 
 
 class TicketLimitUnitTest(TestCase):

@@ -1,8 +1,11 @@
 import datetime
 from decimal import Decimal
+
 from django.test import TestCase
 from django.utils import timezone
-from app.models import Event, User, Category, Rating
+
+from app.models import Event, Rating, User
+
 
 class EventRatingModelTest(TestCase):
     def setUp(self):

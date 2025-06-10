@@ -1,10 +1,13 @@
+import re
+from datetime import datetime
+
 from django import forms
-from .models import Rating, Venue, Event, Category, Ticket, PaymentInfo, RefundRequest
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.utils import timezone
-from datetime import datetime
-import re
+
+from .models import Category, Event, PaymentInfo, Rating, RefundRequest, Ticket, Venue
+
 
 class RatingForm(forms.ModelForm):
     class Meta:

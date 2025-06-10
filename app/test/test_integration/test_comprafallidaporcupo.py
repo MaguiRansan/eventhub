@@ -1,9 +1,11 @@
+from datetime import timedelta
+
+from django.contrib.messages import get_messages
 from django.test import TestCase
 from django.urls import reverse
-from django.contrib.messages import get_messages
-from django.utils import timezone  
-from app.models import User, Event, Ticket
-from datetime import timedelta
+from django.utils import timezone
+
+from app.models import Event, Ticket, User
 
 
 class TicketPurchaseTestCase(TestCase):

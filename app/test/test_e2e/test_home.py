@@ -1,5 +1,7 @@
 import re
+
 from playwright.sync_api import expect
+
 from app.test.test_e2e.base import BaseE2ETest
 
 

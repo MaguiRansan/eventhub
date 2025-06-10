@@ -1,9 +1,12 @@
 import datetime
 from decimal import Decimal
-from django.utils import timezone
+
 from django.test import TestCase
-from app.models import Event, User, Venue, Ticket
+from django.utils import timezone
+
+from app.models import Event, Ticket, User, Venue
 from app.test.test_e2e.base import BaseE2ETest
+
 
 class TicketBaseTest(BaseE2ETest):
     def setUp(self):

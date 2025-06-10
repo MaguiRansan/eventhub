@@ -135,6 +135,5 @@ LOGIN_URL = "/accounts/login/"
 
 LOGOUT_REDIRECT_URL = "/accounts/login/"
 
-from cryptography.fernet import Fernet
 
 ENCRYPTION_KEY =b'ycn_4P7CrLUIqk1Je6MLpeImQmD-JnJrhtMRuVz2h7s=' 

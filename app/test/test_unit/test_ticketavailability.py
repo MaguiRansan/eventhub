@@ -1,10 +1,12 @@
 from datetime import timedelta
 from decimal import Decimal
+
 from django.core.exceptions import ValidationError
-from django.utils import timezone
 from django.test import TestCase
+from django.utils import timezone
 
 from app.models import Event, Ticket, User
+
 
 class TicketAvailabilityTest(TestCase):
     def test_no_se_puede_comprar_mas_de_lo_disponible_para_cada_tipo(self):

@@ -1,23 +1,17 @@
-from django.db import models
-from django.utils import timezone
-import uuid
-from typing import Dict
-from django.contrib.auth.models import AbstractUser
-from django.db import models
-from django.conf import settings
-from django.utils import timezone
-import uuid
-from django.core.exceptions import ValidationError
-from decimal import Decimal
-import qrcode
 import base64
+import uuid
+from decimal import Decimal
 from io import BytesIO
-from .fields import EncryptedCharField
-from django.db.models import Avg, DecimalField
-from django.contrib import messages
-from django.shortcuts import redirect
-from django.db import transaction
 
+import qrcode
+from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.db.models import Avg, DecimalField
+from django.utils import timezone
+
+from .fields import EncryptedCharField
 
 
 class User(AbstractUser):

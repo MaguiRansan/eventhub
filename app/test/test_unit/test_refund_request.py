@@ -1,11 +1,11 @@
+from datetime import timedelta
 from decimal import Decimal
+
 from django.test import TestCase
 from django.utils import timezone
-from datetime import timedelta
-from django.core.exceptions import ValidationError
 
-from app.models import User, Event, Ticket, RefundRequest, Category, Venue
 from app.forms import RefundRequestForm
+from app.models import Category, Event, RefundRequest, Ticket, User, Venue
 
 
 class RefundRequestFormTest(TestCase):

@@ -1,10 +1,13 @@
 import datetime
 from decimal import Decimal
+
+from django.db.models import Sum
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
-from django.db.models import Sum
-from app.models import User, Event, Ticket, Venue
+
+from app.models import Event, Ticket, User, Venue
+
 
 class TicketPurchaseIntegrationTest(TestCase):
     def setUp(self):

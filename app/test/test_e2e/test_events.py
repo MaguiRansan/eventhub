@@ -1,14 +1,14 @@
-import re
-import logging
-import datetime
 import asyncio
-import threading 
-from django.utils import timezone
-from playwright.sync_api import expect
-from asgiref.sync import sync_to_async 
+import datetime
+import logging
+import re
+import threading
 
-from app.models import Event, User, Venue, Category
-from app.test.test_e2e.base import BaseE2ETest 
+from asgiref.sync import sync_to_async
+from playwright.sync_api import expect
+
+from app.models import Category, Event, User, Venue
+from app.test.test_e2e.base import BaseE2ETest
 
 logger = logging.getLogger(__name__)
 
