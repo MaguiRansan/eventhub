@@ -28,7 +28,7 @@ ENV PYTHONUNBUFFERED=1
 # ya que las migraciones dependen del código de tu aplicación.
 RUN python manage.py makemigrations
 RUN python manage.py migrate
-RUN python manage.py collectstatic
+RUN python manage.py collectstatic --noinput
 
 # Comando para ejecutar el servidor
 CMD ["gunicorn", "eventhub.wsgi:application", "--bind", "0.0.0.0:8000"]
