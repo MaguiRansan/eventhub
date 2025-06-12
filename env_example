@@ -1,3 +1,15 @@
-DEBUG=
-SECRET_KEY=
-ALLOWED_HOSTS=
+# Django settings
+SECRET_KEY=2a*b%k=wyjg5i76!u%w^uhzi_@02=(vc3(_15a58kk#_p*a1a6
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1
+ENCRYPTION_KEY=ycn_4P7CrLUIqk1Je6MLpeImQmD-JnJrhtMRuVz2h7s=
+
+# Database settings
+DB_ENGINE=django.db.backends.sqlite3
+DB_NAME=db.sqlite3
+
+# Static and Media files
+STATIC_URL=/static/
+STATIC_ROOT=/app/staticfiles
+MEDIA_URL=/media/
+MEDIA_ROOT=/app/media 
