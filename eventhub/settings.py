@@ -25,7 +25,7 @@ SECRET_KEY = "django-insecure--f67ll=2-b2qolla9=1f8mtg@s=l8^y8aj=@ij-0f4)er@%8(0
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'https://eventhub-grupo4.onrender.com/').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'https://eventhub-grupo4.onrender.com').split(',')
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
