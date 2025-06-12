@@ -26,8 +26,8 @@ ENV PYTHONUNBUFFERED=1
 # Ejecutamos las migraciones de la base de datos
 # Es importante que esto se haga después de copiar el resto del proyecto,
 # ya que las migraciones dependen del código de tu aplicación.
-RUN python manage.py makemigrations
 RUN python manage.py migrate
+RUN python manage.py collectstatic --noinput
 
 # Comando para ejecutar el servidor
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["gunicorn", "eventhub.wsgi:application", "--bind", "0.0.0.0:8000"]

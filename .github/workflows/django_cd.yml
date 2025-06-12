@@ -1,0 +1,57 @@
+name: Entrega Continua
+
+on:
+  release:
+    types: [published] 
+
+jobs:
+  build_and_publish_docker:
+    name: Construir y Publicar Imagen Docker
+    runs-on: ubuntu-latest
+    environment: production 
+    permissions:
+      contents: read
+      packages: write 
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Iniciar sesión en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extraer metadatos para Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/eventhub-grupo4 
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }} 
+
+      - name: Construir y subir imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: . 
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy_to_render:
+    name: Desplegar en Render
+    runs-on: ubuntu-latest
+    needs: build_and_publish_docker 
+    environment: production 
+    steps:
+      - name: Descargar código 
+        uses: actions/checkout@v4
+
+      - name: Activar Render Deploy Hook
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+          
