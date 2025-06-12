@@ -1,7 +1,7 @@
 # Django settings
 SECRET_KEY=2a*b%k=wyjg5i76!u%w^uhzi_@02=(vc3(_15a58kk#_p*a1a6
 DEBUG=True
-ALLOWED_HOSTS=localhost,127.0.0.1,https://eventhub-grupo4.onrender.com
+ALLOWED_HOSTS=localhost,127.0.0.1,eventhub-grupo4.onrender.com
 ENCRYPTION_KEY=ycn_4P7CrLUIqk1Je6MLpeImQmD-JnJrhtMRuVz2h7s=
 
 # Database settings
