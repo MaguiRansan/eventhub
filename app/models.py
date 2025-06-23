@@ -82,7 +82,7 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
-    
+
     @property
     def is_past(self):
         return self.scheduled_at < timezone.now()
@@ -299,34 +299,34 @@ class Ticket(models.Model):
     def can_be_deleted_by(self, user):
         return self.can_be_modified_by(user)
 
-@classmethod
-def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
-    total_existentes = cls.objects.filter(user=user, event=event).aggregate(
-        total=models.Sum('quantity'))['total'] or 0
+    @classmethod
+    def create_ticket(cls, user, event, quantity=1, ticket_type='GENERAL'):
+        total_existentes = cls.objects.filter(user=user, event=event).aggregate(
+            total=models.Sum('quantity'))['total'] or 0
 
-    refund_codes = RefundRequest.objects.filter(
-        user=user,
-        approved=True  
-    ).values_list('ticket_code', flat=True)
+        refund_codes = RefundRequest.objects.filter(
+            user=user,
+            approved=True
+        ).values_list('ticket_code', flat=True)
 
-    cantidad_reembolsada = cls.objects.filter(
-        user=user,
-        event=event,
-        ticket_code__in=refund_codes
-    ).aggregate(total=models.Sum('quantity'))['total'] or 0
+        cantidad_reembolsada = cls.objects.filter(
+            user=user,
+            event=event,
+            ticket_code__in=refund_codes
+        ).aggregate(total=models.Sum('quantity'))['total'] or 0
 
 
-    total_existentes -= cantidad_reembolsada
+        total_existentes -= cantidad_reembolsada
 
-    if total_existentes + quantity > 4:
-        raise ValidationError("No podés comprar más de 4 entradas para este evento.")
+        if total_existentes + quantity > 4:
+            raise ValidationError("No podés comprar más de 4 entradas para este evento.")
 
-    ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
-    if not ticket.ticket_code:
-        ticket.ticket_code = ticket._generate_ticket_code()
-    ticket.full_clean()
-    ticket.save()
-    return ticket
+        ticket = cls(user=user, event=event, quantity=quantity, type=ticket_type)
+        if not ticket.ticket_code:
+            ticket.ticket_code = ticket._generate_ticket_code()
+        ticket.full_clean()
+        ticket.save()
+        return ticket
 
 
 class PaymentInfo(models.Model):
@@ -372,7 +372,7 @@ class RefundRequest(models.Model):
         ('Evento cancelado', 'El evento fue pospuesto o cancelado'),
         ('Otros', 'Otro motivo'),
     ]
-    
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="refund_requests")
     ticket_code = models.CharField(max_length=100)
     reason = models.CharField(max_length=20, choices=REASON_CHOICES)
@@ -381,7 +381,7 @@ class RefundRequest(models.Model):
     approval_date = models.DateTimeField(null=True, blank=True, default=None)
     created_at = models.DateTimeField(auto_now_add=True)
 
-    @property 
+    @property
     def event(self):
         from .models import Ticket
         try:
@@ -390,6 +390,6 @@ class RefundRequest(models.Model):
         except Ticket.DoesNotExist:
             return None
 
-    @property  
+    @property
     def is_pending(self):
         return self.approved is None
