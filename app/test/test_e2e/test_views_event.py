@@ -153,7 +153,7 @@ class EventFilteringE2ETest(BaseE2ETest):
     def test_direct_url_past_events_filter(self):
         """
         Verifica que el evento pasado sea visible cuando se accede directamente
-        a la URL con el parámetro de filtro activado.
+        a la URL con el parámetro de filtro activado. 
         """
         self.login_user(self.user.username, "testpass123")
         self.page.goto(f"{self.live_server_url}/events/?mostrar_pasados=true")
