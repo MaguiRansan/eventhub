@@ -64,71 +64,101 @@ class EventFilteringE2ETest(BaseE2ETest):
             venue=self.venue
         )
         self.today_event.categories.set([self.category])
+    
 
-    def test_event_filtering_workflow(self):
-       
+    def test_future_and_today_events_visible_by_default(self):
+        """
+        Verifica que los eventos futuros y de hoy sean visibles por defecto,
+        y que los eventos pasados no lo sean, sin aplicar ningún filtro.
+        """
         self.login_user(self.user.username, "testpass123")
-        
-        if not self.page.url.endswith('/events/'):
-            self.page.goto(f"{self.live_server_url}/events/")
+        self.page.goto(f"{self.live_server_url}/events/")
         
         expect(self.page.locator("table")).to_be_visible(timeout=10000)
         
-        self.page.wait_for_timeout(1000) 
+        expect(self.page.get_by_text(self.future_event.title)).to_be_visible()
+        expect(self.page.get_by_text(self.today_event.title)).to_be_visible()
+        expect(self.page.get_by_text(self.past_event.title)).not_to_be_visible()
+        logger.info("Eventos futuros y de hoy visibles, evento pasado oculto por defecto.")
+
+    def test_show_past_events_filter(self):
+        """
+        Verifica que al marcar el checkbox 'Mostrar eventos pasados' y aplicar el filtro,
+        el evento pasado se vuelva visible.
+        """
+        self.login_user(self.user.username, "testpass123")
+        self.page.goto(f"{self.live_server_url}/events/")
         
-        expect(self.page.get_by_text(self.future_event.title)).to_be_visible(timeout=10000)
-        expect(self.page.get_by_text(self.today_event.title)).to_be_visible(timeout=10000)
-        expect(self.page.get_by_text(self.past_event.title)).not_to_be_visible(timeout=5000)
-        logger.info("Evento pasado no visible por defecto (comportamiento esperado).")
-        
+        expect(self.page.locator("table")).to_be_visible(timeout=10000)
+
+       
         past_events_checkbox: Locator = self.page.get_by_label(re.compile(r"Show past events|Mostrar eventos pasados", re.IGNORECASE)).or_(
             self.page.locator('input[name="mostrar_pasados"]').or_(
             self.page.locator('input[id="mostrar-pasados"]'))
         )
+        expect(past_events_checkbox).to_be_visible()
         
-        expect(past_events_checkbox).to_be_visible(timeout=5000)
+       
+        past_events_checkbox.check()
+        logger.info("Checkbox 'Mostrar eventos pasados' marcado.")
         
-        if not past_events_checkbox.is_checked():
-            past_events_checkbox.check()
-            logger.info("Checkbox 'Mostrar eventos pasados' marcado.")
-            
-            search_button = self.page.get_by_role("button", name=re.compile(r"Buscar|Search", re.IGNORECASE))
-            
-            expect(search_button).to_be_visible(timeout=5000)
-            search_button.click()
-            self.page.wait_for_load_state("networkidle")
-            expect(self.page.locator("table")).to_be_visible(timeout=10000)
+   
+        search_button = self.page.get_by_role("button", name=re.compile(r"Buscar|Search", re.IGNORECASE))
+        expect(search_button).to_be_visible()
+        search_button.click()
+        self.page.wait_for_load_state("networkidle")
         
-        expect(self.page.get_by_text(self.past_event.title)).to_be_visible(timeout=10000)
+      
+        expect(self.page.locator("table")).to_be_visible(timeout=10000)
+        expect(self.page.get_by_text(self.past_event.title)).to_be_visible()
         logger.info("Evento pasado visible después de aplicar el filtro.")
         
+       
         past_event_row = self.page.locator(f"tr:has-text('{self.past_event.title}')")
-        expect(past_event_row).to_be_visible()
-        
-        try:
-            expect(past_event_row).to_have_class(re.compile("past-event|bg-light", re.IGNORECASE))
-            logger.info("La fila del evento pasado tiene la clase CSS esperada (past-event o bg-light).")
-        except AssertionError:
-            actual_classes = past_event_row.get_attribute("class")
-            logger.warning(f"La fila del evento pasado no tiene la clase esperada. Clases actuales: {actual_classes}")
-            expect(past_event_row).to_be_visible()
-        
-        if past_events_checkbox.is_checked():
-            past_events_checkbox.uncheck()
-            logger.info("Checkbox 'Mostrar eventos pasados' desmarcado.")
+        expect(past_event_row).to_have_class(re.compile("past-event|bg-light", re.IGNORECASE))
+        logger.info("La fila del evento pasado tiene la clase CSS esperada.")
 
-            search_button = self.page.get_by_role("button", name=re.compile(r"Buscar|Search", re.IGNORECASE))
-            
-            expect(search_button).to_be_visible(timeout=5000)
-            search_button.click()
-            self.page.wait_for_load_state("networkidle")
-            
-            expect(self.page.get_by_text(self.past_event.title)).not_to_be_visible(timeout=5000)
-            logger.info("Evento pasado oculto después de desmarcar el filtro (comportamiento esperado).")
-        
+    def test_hide_past_events_filter(self):
+        """
+        Verifica que al desmarcar el checkbox 'Mostrar eventos pasados' y aplicar el filtro,
+        el evento pasado se oculte.
+        """
+        self.login_user(self.user.username, "testpass123")
         self.page.goto(f"{self.live_server_url}/events/?mostrar_pasados=true")
         self.page.wait_for_load_state("networkidle")
-        expect(self.page.get_by_text(self.past_event.title)).to_be_visible(timeout=10000)
-        logger.info("Evento pasado visible al filtrar por URL directamente.")
         
-        logger.info("Prueba de flujo de filtrado de eventos completada exitosamente.")
+        expect(self.page.locator("table")).to_be_visible(timeout=10000)
+        expect(self.page.get_by_text(self.past_event.title)).to_be_visible()
+
+        past_events_checkbox: Locator = self.page.get_by_label(re.compile(r"Show past events|Mostrar eventos pasados", re.IGNORECASE)).or_(
+            self.page.locator('input[name="mostrar_pasados"]').or_(
+            self.page.locator('input[id="mostrar-pasados"]'))
+        )
+        expect(past_events_checkbox).to_be_visible()
+        
+  
+        past_events_checkbox.uncheck()
+        logger.info("Checkbox 'Mostrar eventos pasados' desmarcado.")
+
+
+        search_button = self.page.get_by_role("button", name=re.compile(r"Buscar|Search", re.IGNORECASE))
+        expect(search_button).to_be_visible()
+        search_button.click()
+        self.page.wait_for_load_state("networkidle")
+        
+        
+        expect(self.page.get_by_text(self.past_event.title)).not_to_be_visible()
+        logger.info("Evento pasado oculto después de desmarcar el filtro.")
+
+    def test_direct_url_past_events_filter(self):
+        """
+        Verifica que el evento pasado sea visible cuando se accede directamente
+        a la URL con el parámetro de filtro activado. 
+        """
+        self.login_user(self.user.username, "testpass123")
+        self.page.goto(f"{self.live_server_url}/events/?mostrar_pasados=true")
+        self.page.wait_for_load_state("networkidle")
+        
+        expect(self.page.locator("table")).to_be_visible(timeout=10000)
+        expect(self.page.get_by_text(self.past_event.title)).to_be_visible()
+        logger.info("Evento pasado visible al filtrar por URL directamente.")
