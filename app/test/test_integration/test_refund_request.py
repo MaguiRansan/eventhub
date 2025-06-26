@@ -38,8 +38,8 @@ class TestRefundRequestIntegration(TestCase):
             organizer=cls.organizer,
             general_price=Decimal('10.00'),
             vip_price=Decimal('20.00'),
-            general_tickets_available=100, 
-            vip_tickets_available=50,    
+            general_tickets_available=100,
+            vip_tickets_available=50,
         )
 
         cls.soon_event = Event.objects.create(
@@ -48,8 +48,8 @@ class TestRefundRequestIntegration(TestCase):
             organizer=cls.organizer,
             general_price=Decimal('10.00'),
             vip_price=Decimal('20.00'),
-            general_tickets_available=100, 
-            vip_tickets_available=50,    
+            general_tickets_available=100,
+            vip_tickets_available=50,
         )
         
         cls.past_event = Event.objects.create(
@@ -58,8 +58,8 @@ class TestRefundRequestIntegration(TestCase):
             organizer=cls.organizer,
             general_price=Decimal('10.00'),
             vip_price=Decimal('20.00'),
-            general_tickets_available=100, 
-            vip_tickets_available=50,    
+            general_tickets_available=100,
+            vip_tickets_available=50,
         )
 
         cls.ticket = Ticket.objects.create(
@@ -73,7 +73,7 @@ class TestRefundRequestIntegration(TestCase):
             ticket_code='TICKET456',
             user=cls.user,
             event=cls.base_event,
-            is_used=True, 
+            is_used=True,
         )
         
         cls.used_ticket = Ticket.objects.create(
@@ -111,19 +111,17 @@ class TestRefundRequestIntegration(TestCase):
             is_used=False,
         )
         
-    def _assert_message_content(self, response, expected_message_part, level=None):
-        if response.status_code == 302:
-            response = self.client.get(response.url)
+    def _assert_message_content(self, response, expected_message_part, level): 
         messages_list = list(messages.get_messages(response.wsgi_request))
         self.assertTrue(
             any(expected_message_part in str(m) for m in messages_list),
             f"No se encontró el mensaje esperado '{expected_message_part}' en los mensajes: {[str(m) for m in messages_list]}"
         )
-        if level is not None:
-            self.assertTrue(
-                any(m.level == level for m in messages_list if expected_message_part in str(m)),
-                f"El mensaje '{expected_message_part}' no tiene el nivel esperado {level}"
-            )
+
+        self.assertTrue(
+            any(m.level == level for m in messages_list if expected_message_part in str(m)),
+            f"El mensaje '{expected_message_part}' no tiene el nivel esperado {level}"
+        )
 
     def _assert_form_error(self, response, field_name, expected_error_part):
         self.assertIn('form', response.context, "La respuesta no contiene un objeto 'form' en el contexto.")
@@ -173,10 +171,10 @@ class TestRefundRequestIntegration(TestCase):
             reason='Salud',
             approved=None
         )
-        initial_refund_count = RefundRequest.objects.count() 
+        initial_refund_count = RefundRequest.objects.count()
 
         data = {
-            'ticket_code': self.ticket.ticket_code, 
+            'ticket_code': self.ticket.ticket_code,
             'reason': 'Trabajo',
             'details': '',
             'accept_policy': True
@@ -185,9 +183,9 @@ class TestRefundRequestIntegration(TestCase):
         response = self.client.post(reverse('refund_request'), data)
         
         self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
-     
+    
         self._assert_form_error(response, 'ticket_code', "Ya existe una solicitud de reembolso pendiente para este ticket. Por favor, espera a que sea procesada o edita la existente.")
-        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.") 
+        self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
 
     def test_refund_request_with_existing_processed(self):
         """Test que no se puede crear solicitud si ya hay una procesada para el mismo ticket."""
@@ -197,12 +195,12 @@ class TestRefundRequestIntegration(TestCase):
             user=self.user,
             ticket_code=self.ticket.ticket_code,
             reason='Salud',
-            approved=True 
+            approved=True
         )
-        initial_refund_count = RefundRequest.objects.count() 
+        initial_refund_count = RefundRequest.objects.count()
         
         data = {
-            'ticket_code': self.ticket.ticket_code, 
+            'ticket_code': self.ticket.ticket_code,
             'reason': 'Trabajo',
             'details': '',
             'accept_policy': True
@@ -212,7 +210,7 @@ class TestRefundRequestIntegration(TestCase):
         
         self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
  
-        self._assert_form_error(response, 'ticket_code', "Ya existe una solicitud de reembolso procesada para este ticket.") 
+        self._assert_form_error(response, 'ticket_code', "Ya existe una solicitud de reembolso procesada para este ticket.")
         self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
 
     def test_refund_request_with_other_reason_no_details(self):
@@ -223,7 +221,7 @@ class TestRefundRequestIntegration(TestCase):
         data = {
             'ticket_code': self.ticket.ticket_code,
             'reason': 'Otros',
-            'details': '', 
+            'details': '',
             'accept_policy': True
         }
         
@@ -247,7 +245,7 @@ class TestRefundRequestIntegration(TestCase):
         
         response = self.client.post(reverse('refund_request'), data)
 
-        self.assertEqual(RefundRequest.objects.count(), initial_refund_count) 
+        self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
         self._assert_form_error(response, 'ticket_code', "No se puede reembolsar un ticket que ya ha sido usado.")
         self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
 
@@ -341,7 +339,7 @@ class TestRefundRequestIntegration(TestCase):
         )
         initial_refund_count = RefundRequest.objects.count()
         
-        valid_new_ticket = self.new_ticket_for_user_with_pending 
+        valid_new_ticket = self.new_ticket_for_user_with_pending
 
         data = {
             'ticket_code': valid_new_ticket.ticket_code,
@@ -354,7 +352,7 @@ class TestRefundRequestIntegration(TestCase):
         
         self.assertEqual(RefundRequest.objects.count(), initial_refund_count)
 
-        self._assert_form_error(response, 'ticket_code', "Ya tienes solicitudes de reembolso pendientes") 
+        self._assert_form_error(response, 'ticket_code', "Ya tienes solicitudes de reembolso pendientes")
         self.assertNotContains(response, "Solicitud de reembolso creada exitosamente.")
 
     def test_refund_request_without_accepting_policy(self):
@@ -391,8 +389,8 @@ class TestRefundRequestIntegration(TestCase):
             reason='Motivo Extra',
             approved=None
         )
-  
-        response = self.client.get(reverse('refund_request'), follow=True) 
+    
+        response = self.client.get(reverse('refund_request'), follow=True)
         
         self.assertRedirects(response, reverse('my_refunds'))
 
