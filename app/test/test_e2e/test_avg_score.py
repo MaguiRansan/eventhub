@@ -2,7 +2,6 @@ import datetime
 import logging
 import re
 import time
-import urllib.parse
 from decimal import Decimal
 
 from django.test import Client
@@ -84,31 +83,6 @@ class EventRatingE2ETest(BaseE2ETest):
             ticket_code='XYZ789UVW'
         )
     
-    def _login_user_e2e(self, username, password):
-        login_successful = self.django_client.login(username=username, password=password)
-        self.assertTrue(login_successful, f"Login de Django falló para el usuario {username}")
-
-        session_cookie = self.django_client.cookies.get('sessionid')
-        
-        if not session_cookie:
-            self.fail("No se encontró la cookie de sesión después del login de Django. El login pudo haber fallado.")
-
-        parsed_url = urllib.parse.urlparse(self.live_server_url)
-        domain = parsed_url.hostname 
-
-        self.page.context.add_cookies([
-            {
-                'name': 'sessionid',
-                'value': session_cookie.value,
-                'domain': domain, 
-                'path': '/',
-                'expires': int(time.time()) + 3600 
-            }
-        ])
-        self.page.goto(f"{self.live_server_url}/events/")
-        self.page.wait_for_load_state('networkidle')
-
-
     def _logout_user_e2e(self):
         self.django_client.logout()
         
@@ -123,7 +97,7 @@ class EventRatingE2ETest(BaseE2ETest):
     def test_submit_rating_and_check_average_display(self):
         event_url = f"{self.live_server_url}/events/{self.event_past.id}/"
         
-        self._login_user_e2e(self.regular_user.username, "password123")
+        self.login_user(self.regular_user.username, "password123") 
         self.page.goto(event_url) 
         self.page.wait_for_load_state('networkidle')
 
@@ -139,8 +113,8 @@ class EventRatingE2ETest(BaseE2ETest):
         expect(self.page.get_by_text("¡Tu calificación ha sido guardada con éxito!")).to_be_visible()
 
         self._logout_user_e2e() 
-   
-        self._login_user_e2e(self.another_user.username, "password123")
+    
+        self.login_user(self.another_user.username, "password123") 
         self.page.goto(event_url) 
         self.page.wait_for_load_state('networkidle')
 
@@ -155,7 +129,7 @@ class EventRatingE2ETest(BaseE2ETest):
 
         self._logout_user_e2e() 
         
-        self._login_user_e2e(self.organizer_user.username, "password123")
+        self.login_user(self.organizer_user.username, "password123")
         self.page.goto(event_url) 
         self.page.wait_for_load_state('networkidle')
 
