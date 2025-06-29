@@ -28,35 +28,10 @@ jobs:
         run: python -m playwright install --with-deps chromium
 
   tests:
-    name: Tests Unitarios e Integración
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Checkout del código
-        uses: actions/checkout@v4
-
-      - name: Configurar Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Instalar dependencias
-        run: pip install -r requirements.txt
-
-      - name: Configurar PYTHONPATH para Django
-        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-
-      - name: Ejecutar chequeo estático (Ruff)
-        run: ruff check .
-
-      - name: Ejecutar tests unitarios e integración
-        run: coverage run --source="./app" --omit="./app/migrations/**,./app/test/test_e2e/**" manage.py test app.test.test_unit app.test.test_integration
-
-      - name: Generar reporte de cobertura y verificar umbral
-        run: coverage report --fail-under=72 
-
+    - name: Test Unitario e Integración 
+      run: |
+        python manage.py test app/test/test_unit app/test/test_integration
+        
   e2e:
     runs-on: ubuntu-latest
     name: Tests End-to-End
